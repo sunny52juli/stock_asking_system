@@ -1,11 +1,17 @@
-# QuantitativeSystem - AI 驱动的量化交易系统
+# stock_asking_system - AI 驱动的量化交易系统
 
 基于 LLM 的股票筛选和回测系统，整合了 DeepAgents 框架、MCP 工具协议和多模块架构。
+
+> 💡 **项目定位**：面向个人投资者的实战工具，尤其适合短线技术派投资者
+>
+> **核心功能**：
+> 1. 🤖 **智能筛选** - 基于 LLM 理解自然语言，自动生成股票筛选策略，无需手动编写代码
+> 2. 📊 **策略回测** - 对生成的策略进行历史回测，清晰展示收益情况，辅助投资决策
 
 ## 系统架构概览
 
 ```
-QuantitativeSystem
+stock_asking_system
 ├── datahub          # 数据层：统一的数据访问和管理
 ├── screener_deepagent  # AI Agent 层：股票筛选智能体
 ├── screener_mcp     # MCP 服务层：标准化的工具接口
@@ -413,4 +419,8 @@ MIT License
 
 ## 致谢
 
-本项目部分代码参考了 [QuantitativeSystem](https://github.com/luocheng812/QuantitativeSystem/tree/develop) 项目，特此感谢。
+- **参考项目**：[QuantitativeSystem](https://github.com/luocheng812/QuantitativeSystem/tree/develop)
+- **开源框架**：
+  - [LangChain](https://python.langchain.com/) - 提供强大的 LLM 应用开发框架和 MCP 集成支持
+- **数据服务**：
+  - [Tushare](https://tushare.pro/) - 提供全面的中国金融市场数据
