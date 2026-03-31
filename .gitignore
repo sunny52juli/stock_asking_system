@@ -1,0 +1,95 @@
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# UV
+.uv-cache/
+uv.lock
+
+# Data files
+*.csv
+*.json
+*.parquet
+
+# Environment
+.env
+.env.local
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.dmypy.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Output directories (生成的脚本、报告等)
+output/
+data_cache/
+# Memory and cache (个人数据、历史记录)
+memory/
+*.db
+*.sqlite
+*.sqlite3
+data_cache/
+
+# LangGraph checkpoints (会话状态)
+checkpoints/
+
+# Agent transcripts (对话历史)
+agent-transcripts/
+
+# Datahub cache (Tushare 数据缓存)
+datahub/cache/
+datahub/**/*.parquet
+datahub/**/*.csv
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+keys/
+
+# Serialized Python objects (may contain model state or data snapshots)
+*.pkl
+*.pickle
+
+# Generated reports (backtest output, analysis results)
+reports/

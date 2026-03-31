@@ -1,0 +1,24 @@
+# UV Configuration for QuantitativeSystem
+# https://docs.astral.sh/uv/reference/settings/
+
+# Cache directory
+cache-dir = ".uv-cache"
+
+# Use uv resolver
+resolution = "highest"
+
+# 配置阿里云镜像源
+[[index]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
+
+# 备用镜像 (清华)
+[[index]]
+name = "tsinghua"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+
+# 再备用 (中科大)
+[[index]]
+name = "ustc"
+url = "https://pypi.mirrors.ustc.edu.cn/simple/"
