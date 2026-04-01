@@ -32,18 +32,20 @@ class ScreeningScriptGenerator:
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def generate_script(self, screening_logic: dict, query: str = "", strategy_num: int = 1) -> list[str]:
+    def generate_script(self, screening_logic: dict, query: str = "", strategy_num: int = 1, strategy_name: str = None) -> list[str]:
         """生成筛选脚本并保存到策略专属文件夹
         
         Args:
             screening_logic: 筛选逻辑字典
             query: 原始查询字符串
             strategy_num: 生成的策略版本数量（默认 1）
+            strategy_name: 策略名称（如果提供，将覆盖 screening_logic 中的 name，确保与配置一致）
             
         Returns:
             保存的文件路径列表
         """
-        logic_name = screening_logic.get("name", "未命名筛选")
+        # 优先使用传入的策略名称，确保与配置文件一致
+        logic_name = strategy_name if strategy_name else screening_logic.get("name", "未命名筛选")
         logic_name_safe = _sanitize_filename(logic_name)
         
         # 创建策略专属文件夹

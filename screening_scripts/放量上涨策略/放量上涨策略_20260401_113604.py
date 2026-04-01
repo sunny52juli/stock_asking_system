@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-筛选逻辑脚本: 放量突破策略
+筛选逻辑脚本: 放量上涨策略
 (由 screener_deepagent 生成, 仅依赖 core)
 
 原始查询: 找出最近放量突破的股票：
@@ -9,17 +9,18 @@
     3. 技术形态良好
 
 筛选说明:
-    筛选放量突破股票：1) 日涨幅>3%；2) 成交量较5日均量放大1.5倍以上；3) RSI<75避免过热。置信度公式综合考虑涨幅和放量程度。
+    筛选放量上涨股票：1) 日涨幅>3%；2) 成交量较5日均量放大1.2倍以上；3) RSI<80避免超买；4) 收盘价站上5日均线
 
 工具步骤:
     1. daily_return = pct_change({'column': 'close', 'periods': 1})
     2. avg_volume_5d = rolling_mean({'column': 'vol', 'window': 5})
     3. rsi_14 = rsi({'column': 'close', 'window': 14})
+    4. ma_5 = rolling_mean({'column': 'close', 'window': 5})
 
-筛选表达式: (daily_return > 0.03) & (vol / avg_volume_5d > 1.5) & (rsi_14 < 75)
-置信度公式: daily_return * 100 * 0.5 + (vol / avg_volume_5d - 1) * 100 * 0.5
+筛选表达式: (daily_return > 0.03) & (vol / avg_volume_5d > 1.2) & (rsi_14 < 80) & (close > ma_5)
+置信度公式: daily_return * 100 * 0.4 + (vol / avg_volume_5d) * 0.3 + (close / ma_5 - 1) * 100 * 0.3
 
-生成时间: 2026-03-31 16:53:17
+生成时间: 2026-04-01 11:36:04
 """
 
 import sys
@@ -37,7 +38,7 @@ if project_root not in sys.path:
 
 # ==================== 筛选逻辑定义 ====================
 SCREENING_LOGIC = {
-    "name": "放量突破策略",
+    "name": "放量上涨策略",
     "tools": [
         {
             "tool": "pct_change",
@@ -62,11 +63,19 @@ SCREENING_LOGIC = {
                 "window": 14
             },
             "var": "rsi_14"
+        },
+        {
+            "tool": "rolling_mean",
+            "params": {
+                "column": "close",
+                "window": 5
+            },
+            "var": "ma_5"
         }
     ],
-    "expression": "(daily_return > 0.03) & (vol / avg_volume_5d > 1.5) & (rsi_14 < 75)",
-    "confidence_formula": "daily_return * 100 * 0.5 + (vol / avg_volume_5d - 1) * 100 * 0.5",
-    "rationale": "筛选放量突破股票：1) 日涨幅>3%；2) 成交量较5日均量放大1.5倍以上；3) RSI<75避免过热。置信度公式综合考虑涨幅和放量程度。"
+    "expression": "(daily_return > 0.03) & (vol / avg_volume_5d > 1.2) & (rsi_14 < 80) & (close > ma_5)",
+    "confidence_formula": "daily_return * 100 * 0.4 + (vol / avg_volume_5d) * 0.3 + (close / ma_5 - 1) * 100 * 0.3",
+    "rationale": "筛选放量上涨股票：1) 日涨幅>3%；2) 成交量较5日均量放大1.2倍以上；3) RSI<80避免超买；4) 收盘价站上5日均线"
 }
 # ==================== 筛选逻辑定义结束 ====================
 
@@ -99,7 +108,7 @@ def main():
     """主函数 - 独立运行时使用 (数据来自 core.data_loading)"""
     import argparse
 
-    parser = argparse.ArgumentParser(description='放量突破策略 - 筛选脚本')
+    parser = argparse.ArgumentParser(description='放量上涨策略 - 筛选脚本')
     parser.add_argument('--top_n', type=int, default=20, help='返回股票数量（默认 20）')
     parser.add_argument('--output', type=str, default=None, help='输出文件路径（可选）')
     args = parser.parse_args()
@@ -111,7 +120,7 @@ def main():
     data = load_market_data()
     print(f"✅ 数据加载完成：{len(data)} 条记录")
 
-    print(f"\n🔍 执行筛选: 放量突破策略")
+    print(f"\n🔍 执行筛选: 放量上涨策略")
     results = screen_with_data(data, top_n=args.top_n)
 
     print(f"\n✅ 找到 {len(results)} 只符合条件的股票")
