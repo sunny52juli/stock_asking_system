@@ -1,8 +1,37 @@
 # AI驱动的量化交易系统
 
-基于LLM的智能股票筛选与回测框架，通过自然语言交互实现因子挖掘、策略生成和回测验证。
+> 基于 LLM 的股票量价形态筛选和回测系统，整合了DeepAgents、Harness、MCP、Skill的多模块架构设计
 
-## 系统架构
+## 📖 项目简介
+
+### 项目动机
+
+在之前实现的量化系统 [QuantitativeSystem](https://github.com/luocheng812/QuantitativeSystem/tree/develop) 中，我们实现了因子挖掘系统和股票查询系统两大核心模块。
+
+但考虑到对于个人投资者而言，因子挖掘几乎用不到。个人投资更看重短期的技术面的量价分析（本人实战亦是如此），因此我们独立了股票查询系统，并引入 DeepAgent 框架进行重新实现。
+
+**本项目：stock_asking_system**
+
+💡 **项目定位**：面向个人投资者的实战工具，尤其适合短线技术派投资者
+
+### 核心功能
+
+- 🤖 **智能筛选** - 基于 LLM 理解自然语言，自动生成股票筛选策略，无需手动编写代码
+- 📊 **策略回测** - 对生成的策略进行历史回测，清晰展示收益情况，辅助投资决策
+
+## 🏗️ 系统架构
+
+```mermaid
+graph TB
+    A[Agent Layer<br/>智能体层] --> B[Harness Framework<br/>约束框架层]
+    B --> C[Tool Layer<br/>工具层]
+    C --> D[Quality & Retry Layer<br/>质量与重试层]
+    D --> E[Core Logic Layer<br/>核心逻辑层]
+    E --> F[DataHub Layer<br/>数据层]
+    F --> G[Infrastructure Layer<br/>基础设施层]
+```
+
+### 分层架构图
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -14,11 +43,34 @@
 └─────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────┐
+│              Harness Framework (约束框架层)               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │ Hooks Engine │  │ Rules Loader │  │ Permissions  │  │
+│  │ (钩子系统)    │  │ (规则引擎)    │  │ (权限控制)    │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+│  • PreToolUse/PostToolUse/Stop 三阶段钩子                │
+│  • Markdown规则注入 (.stock_asking/rules/)              │
+│  • 白名单/黑名单通配符匹配                                │
+└─────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────┐
 │                 Tool Layer (工具层)                       │
 │  ┌──────────────────┐  ┌──────────────────────┐        │
 │  │ Bridge Tools     │  │ MCP Server Tools     │        │
 │  │ (本地Python函数)  │  │ (远程量化工具服务)     │        │
 │  └──────────────────┘  └──────────────────────┘        │
+└─────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────┐
+│          Quality & Retry Layer (质量与重试层)             │
+│  ┌──────────────────┐  ┌──────────────────────┐        │
+│  │ Quality Evaluator│  │ Smart Retry Manager  │        │
+│  │ (质量评估器)      │  │ (智能重试管理器)      │        │
+│  └──────────────────┘  └──────────────────────┘        │
+│  • 多维度质量评分 (结果完整性/数量合理性/逻辑一致性)       │
+│  • 错误类型识别 (参数验证/超时/无结果/配置错误等)         │
+│  • 自适应参数调整 (自动优化筛选条件/放宽阈值)             │
+│  • 持久化学习 (SQLite记录重试历史供Agent参考)            │
 └─────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────┐
@@ -39,101 +91,103 @@
                            ↓
 ┌─────────────────────────────────────────────────────────┐
 │             Infrastructure Layer (基础设施层)              │
-│  Config / Logging / Retry / Session / Telemetry         │
+│  Config / Logging / Session / Telemetry                 │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## 核心模块
+## 🔧 核心模块
 
 ### 1. DataHub - 统一数据访问层
 
-**职责**: 提供标准化的金融数据访问接口，支持股票、基金、指数、新闻、特征等多维数据。
+**职责**：提供标准化的金融数据访问接口，支持股票、基金、指数、新闻、特征等多维数据。
 
-**核心组件**:
-- **Repository Pattern**: 统一的仓储模式，支持本地/远程数据源自动切换
-- **Domain Entities**: `Stock`, `Fund`, `Index`, `News`, `Feature`, `Calendar`
-- **Data Loaders**: `StockDataLoader`, `FactorDataLoader` 提供便捷的数据加载接口
-- **Parquet Cache**: 基于日期的高效缓存机制 (`data_cache/stock/daily/`)
+**核心组件**：
+- **Repository Pattern**：统一的仓储模式，支持本地/远程数据源自动切换
+- **Domain Entities**：`Stock`, `Fund`, `Index`, `News`, `Feature`, `Calendar`
+- **Data Loaders**：`StockDataLoader`, `FactorDataLoader` 提供便捷的数据加载接口
+- **Parquet Cache**：基于日期的高效缓存机制 (`data_cache/stock/daily/`)
 
 ### 2. Agent System - 智能体系统
 
-**职责**: 基于LLM的智能决策引擎，理解用户意图并生成可执行的量化策略。
+**职责**：基于LLM的智能决策引擎，理解用户意图并生成可执行的量化策略。
 
-**双模式架构**:
-- **Deep Thinking Mode** (`deep_thinking=true`): 
-  - 使用 `deepagents` 框架
-  - 包含任务规划 (write_todos)、Skills渐进加载、长期记忆
-  - 适合复杂策略挖掘场景
-  
-- **Quick Mode** (`deep_thinking=false`):
-  - 使用 LangGraph ReAct Agent
-  - 无任务规划，响应更快
-  - 适合简单查询场景
+#### 双模式架构
 
-**核心组件**:
-- **Agent Factory**: 根据配置创建不同模式的Agent
-- **Skill Registry**: 三层渐进式技能加载系统
-- **Long-term Memory**: 跨会话持久化 (SQLite)
-- **Tool Provider**: 统一管理MCP工具和本地Bridge工具
-- **Harness Framework**: Hooks/Rules/Permissions约束框架
+| 模式 | 配置 | 特点 | 适用场景 |
+|------|------|------|----------|
+| **Deep Thinking Mode** | `deep_thinking=true` | 使用 `deepagents` 框架，包含任务规划、Skills渐进加载、长期记忆 | 复杂策略挖掘场景 |
+| **Quick Mode** | `deep_thinking=false` | 使用 LangGraph ReAct Agent，无任务规划，响应更快 | 简单查询场景 |
+
+**核心组件**：
+- **Agent Factory**：根据配置创建不同模式的Agent
+- **Skill Registry**：三层渐进式技能加载系统
+- **Long-term Memory**：跨会话持久化 (SQLite)
+- **Tool Provider**：统一管理MCP工具和本地Bridge工具
+- **Harness Framework**：Hooks/Rules/Permissions约束框架
+  - **Hooks Engine**：三阶段钩子 (PreToolUse/PostToolUse/Stop)
+  - **Rules Loader**：Markdown规则动态注入到system prompt
+  - **Permissions**：基于fnmatch的工具白名单/黑名单
+- **Quality & Retry System**：质量评估与智能重试
+  - **Quality Evaluator**：多维度结果质量评分
+  - **Smart Retry Manager**：错误分类+自适应参数调整
+  - **Auto-fix Loop**：基于质量反馈的自动优化循环
 
 ### 3. Screening Engine - 股票筛选引擎
 
-**职责**: 高效执行股票筛选逻辑，支持动态指标计算和多条件过滤。
+**职责**：高效执行股票筛选逻辑，支持动态指标计算和多条件过滤。
 
-**处理流程**:
+**处理流程**：
 ```
 用户查询 → LLM解析 → 筛选逻辑配置 → 预筛选 → 批量计算 → Top-N排序
 ```
 
-**核心组件**:
-- **PreFilterEngine**: 基于股票池规则快速过滤（ST、停牌、上市天数、行业等）
-- **BatchCalculator**: 向量化批量计算技术指标和自定义因子
-- **IndustryMatcher**: 行业模糊匹配引擎
-- **ScriptSaver**: 自动生成可复用的Python筛选脚本
+**核心组件**：
+- **PreFilterEngine**：基于股票池规则快速过滤（ST、停牌、上市天数、行业等）
+- **BatchCalculator**：向量化批量计算技术指标和自定义因子
+- **IndustryMatcher**：行业模糊匹配引擎
+- **ScriptSaver**：自动生成可复用的Python筛选脚本
 
 ### 4. Backtest Engine - 回测引擎
 
-**职责**: 对生成的策略进行历史回测，评估策略有效性。
+**职责**：对生成的策略进行历史回测，评估策略有效性。
 
-**回测流程**:
+**回测流程**：
 ```
 加载历史数据 → 执行策略脚本 → 计算持有期收益 → 生成统计报告
 ```
 
-**核心功能**:
-- **多持有期回测**: 支持同时测试多个持有周期 (默认: 4日/10日/20日)
-- **收益计算**: 年化收益率、胜率、最大回撤等关键指标
-- **组合统计**: 投资组合层面的聚合分析
-- **可视化报告**: 结构化回测结果展示
+**核心功能**：
+- **多持有期回测**：支持同时测试多个持有周期 (默认: 4日/10日/20日)
+- **收益计算**：年化收益率、胜率、最大回撤等关键指标
+- **组合统计**：投资组合层面的聚合分析
+- **可视化报告**：结构化回测结果展示
 
 ### 5. MCP Server - 模型上下文协议服务
 
-**职责**: 提供标准化的量化工具服务接口，支持远程调用。
+**职责**：提供标准化的量化工具服务接口，支持远程调用。
 
-**架构特点**:
-- **FastMCP框架**: 基于MCP协议的轻量级服务
-- **自动注册**: 通过装饰器自动发现和注册工具函数
-- **传输协议**: 支持stdio和SSE两种传输方式
-- **工具分类**: 数据查询、指标计算、策略执行等
+**架构特点**：
+- **FastMCP框架**：基于MCP协议的轻量级服务
+- **自动注册**：通过装饰器自动发现和注册工具函数
+- **传输协议**：支持stdio和SSE两种传输方式
+- **工具分类**：数据查询、指标计算、策略执行等
 
 ### 6. Infrastructure - 基础设施层
 
-**配置管理**:
-- **多层配置**: YAML文件 + 环境变量 + 默认值
-- **热重载**: 支持运行时重新加载配置
-- **类型安全**: 基于Pydantic的配置验证
+**配置管理**：
+- **多层配置**：YAML文件 + 环境变量 + 默认值
+- **热重载**：支持运行时重新加载配置
+- **类型安全**：基于Pydantic的配置验证
 
-**其他组件**:
-- **Logging**: 结构化日志记录
-- **Retry Manager**: 智能重试机制
-- **Session Management**: 会话状态持久化
-- **Telemetry**: OpenTelemetry集成（可选）
+**其他组件**：
+- **Logging**：结构化日志记录
+- **Session Management**：会话状态持久化
+- **Telemetry**：OpenTelemetry集成（可选）
 
-## 技术栈
+## 💻 技术栈
 
 | 类别 | 技术选型 |
-|------|---------|
+|------|----------|
 | **AI框架** | deepagents, LangGraph, LangChain |
 | **数据处理** | Pandas, NumPy, PyArrow |
 | **数据源** | Tushare Pro |
@@ -143,7 +197,7 @@
 | **代码质量** | black, ruff, mypy |
 | **包管理** | uv (Python包管理器) |
 
-## 目录结构
+## 📁 目录结构
 
 ```
 stock_asking_system/
@@ -153,7 +207,13 @@ stock_asking_system/
 │   │   ├── tools/          # Bridge工具提供者
 │   │   ├── context/        # Skills、Prompts
 │   │   ├── memory/         # 长短期记忆
-│   │   └── harness/        # 约束框架
+│   │   ├── harness/        # 约束框架
+│   │   │   ├── hooks.py    # Hooks执行器 (PreToolUse/PostToolUse/Stop)
+│   │   │   ├── rules.py    # Rules加载器 (.md文件→system prompt)
+│   │   │   └── permissions.py  # 权限检查器 (白名单/黑名单)
+│   │   └── quality/        # 质量与重试
+│   │       ├── evaluator.py    # 质量评估器
+│   │       └── retry_manager.py # 智能重试管理器
 │   ├── screening/          # 股票筛选引擎
 │   │   ├── executor.py     # 筛选执行器
 │   │   ├── prefilter.py    # 预筛选引擎
@@ -171,20 +231,28 @@ stock_asking_system/
 ├── infrastructure/         # 基础设施
 │   ├── config/            # 配置管理
 │   ├── logging/           # 日志系统
-│   └── retry/             # 重试机制
+│   └── session/           # 会话管理
 ├── data_cache/            # 数据缓存 (Parquet)
 ├── setting/               # 配置文件
 │   ├── settings.yaml      # 项目配置
 │   └── settings_advanced.yaml  # 高级配置
+.stock_asking/           # Agent运行时配置
+│   ├── hooks/            # Hook脚本目录
+│   │   ├── validate-strategy.py  # 策略验证Hook
+│   │   └── quality-gate.py       # 质量门禁Hook
+│   └── rules/            # 规则文件目录
+│       ├── data-quality.md       # 数据质量规则
+│       └── risk-control.md       # 风险控制规则
 └── docs/                  # 文档
 ```
 
-## 工作流程
+## 🔄 工作流程
 
 ### 典型使用场景
 
-1. **策略挖掘**:
-   ```
+#### 1. 策略挖掘
+
+```
    用户: "帮我找放量突破的股票"
    ↓
    Agent解析意图 → 生成筛选逻辑
@@ -196,8 +264,9 @@ stock_asking_system/
    (可选) 触发回测验证
    ```
 
-2. **回测验证**:
-   ```
+#### 2. 回测验证
+
+```
    选择策略脚本目录
    ↓
    Backtest Engine加载历史数据
@@ -207,16 +276,177 @@ stock_asking_system/
    生成回测报告 (年化收益/胜率/持仓明细)
    ```
 
-3. **数据查询**:
-   ```
-   用户: "查询茅台最近30天的收盘价"
+#### 3. 数据查询
+
+```
+   用户: “查询茅台最近30天的收盘价”
    ↓
    Agent调用MCP工具 → DataHub获取数据
    ↓
    格式化返回结果
    ```
 
-## 回测示例
+## ⚙️ Harness 约束框架
+
+Harness 框架为 Agent 提供三层约束机制，确保执行过程安全可控：
+
+### 1. Hooks 钩子系统
+
+三阶段钩子拦截机制，在关键节点执行自定义验证逻辑：
+
+- **PreToolUse**：工具调用前验证（如策略格式检查）
+- **PostToolUse**：工具调用后验证
+- **Stop**：结果返回前质量门禁
+
+**Exit Code 协议**：
+
+| Code | 含义 | 行为 |
+|------|------|------|
+| `0` | 通过 | 继续执行 |
+| `1` | 警告 | 继续执行，记录警告 |
+| `2` | 阻止 | 终止执行，错误信息返回给 Agent |
+
+**示例**：`.stock_asking/hooks/validate-strategy.py`
+
+```python
+# 验证策略输入参数
+def validate_strategy(payload: dict) -> tuple[int, str]:
+    tool_input = payload.get("tool_input", {})
+    
+    # 检查必需字段
+    if "strategy_name" not in tool_input:
+        return 2, "Missing required field: strategy_name"
+    
+    return 0, "Validation passed"
+```
+
+**配置方式** (`settings.yaml`)：
+
+```yaml
+harness:
+  hooks:
+    PreToolUse:
+      - matcher: "run_screening"
+        hooks:
+          - type: command
+            command: "python .stock_asking/hooks/validate-strategy.py"
+    Stop:
+      - hooks:
+          - type: command
+            command: "python .stock_asking/hooks/quality-gate.py"
+```
+
+### 2. Rules 规则引擎
+
+从 Markdown 文件加载业务规则并注入到 system prompt，约束 Agent 行为。
+
+**规则文件位置**：`.stock_asking/rules/*.md`
+
+**示例规则**：
+- `data-quality.md`：数据质量规则（禁止未来函数、停牌过滤等）
+- `risk-control.md`：风险控制规则（行业集中度、极端值过滤等）
+
+**加载流程**：
+```
+RulesLoader.load() 
+  ↓
+读取 .stock_asking/rules/*.md
+  ↓
+格式化为 system prompt 片段
+  ↓
+合并到 Agent 初始提示词
+```
+
+### 3. Permissions 权限控制
+
+基于 fnmatch 通配符的工具白名单/黑名单机制。
+
+```yaml
+permissions:
+  allow: ["*"]              # 允许所有工具
+  deny: ["dangerous_tool_*"] # 禁止特定工具
+```
+
+> **优先级**：deny > allow
+
+## 🛡️ 质量评估与智能重试
+
+系统内置多维度质量评估和自动修复机制，确保输出结果可靠性。
+
+### 1. Quality Evaluator (质量评估器)
+
+对 Agent 输出进行多维度评分。
+
+**评估维度**：
+- **结果完整性**：是否包含必需字段
+- **数量合理性**：筛选结果数量是否在合理范围
+- **逻辑一致性**：筛选条件与用户需求是否匹配
+- **数据有效性**：是否存在异常值或缺失
+
+**输出示例**：
+
+```python
+{
+    "score": 0.85,
+    "issues": ["结果数量过少"],
+    "suggestions": ["放宽成交量阈值"],
+    "should_retry": True
+}
+```
+
+### 2. Smart Retry Manager (智能重试管理器)
+
+基于错误类型识别的自适应重试机制。
+
+**错误分类**：
+
+| 类型 | 说明 | 是否可重试 |
+|------|------|------------|
+| **可重试错误** | 参数验证失败、超时、无结果、工具执行错误 | ✅ |
+| **不可重试错误** | 配置错误、权限不足 | ❌ |
+
+**自适应调整策略**：
+- 参数验证失败 → 调整参数范围
+- 无结果 → 放宽筛选条件（降低阈值、扩大时间窗口）
+- 超时 → 减少数据量或简化计算
+
+**持久化学习**：
+- 重试记录存储到 SQLite (`memory.db`)
+- Agent 可参考历史重试经验优化策略
+
+### 3. Auto-fix Loop (自动修复循环)
+
+当检测到质量问题时，系统自动触发优化循环。
+
+**伪代码示例**：
+
+```python
+result = agent.execute(query)
+quality = quality_evaluator.evaluate(result)
+
+if quality.should_retry:
+    for attempt in range(max_retries):
+        # 构建优化提示
+        optimization_prompt = f"""
+        原查询: {query}
+        发现问题: {quality.issues}
+        建议优化: {quality.suggestions}
+        请调整筛选条件并重试
+        """
+        
+        result = agent.execute(optimization_prompt)
+        quality = quality_evaluator.evaluate(result)
+        
+        if not quality.should_retry:
+            break
+```
+
+**实际效果**：
+- ✅ 首次筛选结果为空 → 自动放宽条件重试
+- ✅ 结果数量过多 → 自动增加过滤条件
+- ✅ 逻辑不一致 → 重新生成筛选表达式
+
+## 📊 回测示例
 
 执行回测后，系统会输出详细的筛选过程和回测报告：
 
@@ -292,7 +522,7 @@ stock_asking_system/
  回测完成！
 ```
 
-## 策略脚本生成和股票推送示例
+## 📝 策略脚本生成和股票推送示例
 
 当用户通过自然语言查询股票时，系统会自动生成筛选策略、执行筛选并推送结果：
 
@@ -405,11 +635,12 @@ stock_asking_system/
        策略脚本已保存：screening_scripts\放量突破/放量突破_20260414_002658.py
 ```
 
-## 配置说明
+## ⚙️ 配置说明
 
-主要配置文件位于 `setting/` 目录：
+主要配置文件位于 `setting/` 目录。
 
-**settings.yaml** - 核心配置:
+**settings.yaml** - 核心配置：
+
 ```yaml
 llm:
   model: "deepseek-chat"
@@ -434,9 +665,9 @@ harness:
   deep_thinking: false
 ```
 
-环境变量通过 `.env` 文件管理（参考 `.env.example`）。
+> 环境变量通过 `.env` 文件管理（参考 `.env.example`）。
 
-## 扩展开发
+## 🔌 扩展开发
 
 ### 添加新的MCP工具
 
@@ -458,31 +689,41 @@ def calculate_custom_indicator(data: pd.DataFrame, param: float) -> pd.Series:
 
 实现 `DataSource` 接口并在 `datahub/source/` 中注册新的数据提供者。
 
+## 📦 依赖要求
 
-## 依赖要求
+- **Python** >= 3.12
+- **uv** (推荐包管理器)
 
-- Python >= 3.12
-- uv (推荐包管理器)
+**安装依赖**：
 
-安装依赖:
 ```bash
 uv sync
 ```
 ## 🎯 版本更新
 
 | 维度 | 原始版本 | 当前版本 | 改进程度 |
-|------|---------|---------|---------|
+|------|---------|---------|----------|
 | **架构设计** | 6个平级模块 | 6层分层架构 + 基础设施层 | ⭐⭐⭐⭐⭐ |
 | **代码组织** | 扁平结构，职责模糊 | 模块化子目录，单一职责 | ⭐⭐⭐⭐⭐ |
 | **数据访问** | 基础Repository模式 | 完整Domain-Driven Design | ⭐⭐⭐⭐ |
 | **Agent系统** | 单一DeepAgent | 双模式架构（深度/快速） | ⭐⭐⭐⭐⭐ |
+| **约束框架** | 无约束机制 | Harness Hooks/Rules/Permissions 三层约束 | ⭐⭐⭐⭐⭐ |
+| **质量保障** | 无质量评估 | Quality Evaluator + Smart Retry 自动修复 | ⭐⭐⭐⭐⭐ |
 | **筛选引擎** | 单文件实现 | 5个独立模块解耦 | ⭐⭐⭐⭐⭐ |
 | **回测系统** | 基础收益计算 | 多维度统计分析 | ⭐⭐⭐⭐ |
 | **配置管理** | 分散的Python文件 | YAML + Pydantic + 环境变量 | ⭐⭐⭐⭐⭐ |
 | **工程化** | 基础Lint/Type检查 | 完整CI/CD工具链 | ⭐⭐⭐⭐ |
 | **可测试性** | 缺少系统化测试 | 分层单元测试体系 | ⭐⭐⭐⭐⭐ |
 | **可扩展性** | 硬编码扩展点 | 插件化架构 | ⭐⭐⭐⭐⭐ |
+## 🙏 致谢
 
-## 许可证
+- **参考项目**：[QuantitativeSystem](https://github.com/luocheng812/QuantitativeSystem/tree/develop) - 感谢 luocheng812 对本框架的设计贡献
+- **开源框架**：
+  - [LangChain](https://python.langchain.com/) - 提供强大的 LLM 应用开发框架和 MCP 集成支持
+- **数据服务**：
+  - [Tushare](https://tushare.pro/document/2?doc_id=27)
+
+## 📄 许可证
 
 MIT License
+

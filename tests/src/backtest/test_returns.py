@@ -115,14 +115,17 @@ class TestReturnsCalculator:
 
     def test_invalid_holding_period(self, calculator):
         """测试超出数据范围的持有期."""
-        # 使用很早的日期，使得持有期超出数据范围
+        # 使用很早的日期，使得部分持有期超出数据范围
         result = calculator._calculate_single_stock_returns(
             '000001.SZ',
             pd.Timestamp('2024-01-25')
         )
         
-        # 应该返回None，因为没有足够的未来数据
-        assert result is None or all(v is None for v in result.values())
+        # 应该返回字典，但超出范围的持有期收益率为None
+        assert result is not None
+        assert isinstance(result, dict)
+        # 至少有一个持有期为None（超出数据范围）
+        assert any(v is None for v in result.values())
 
 
 class TestReturnsCalculatorEdgeCases:

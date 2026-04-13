@@ -103,15 +103,15 @@ class TestPrintBacktestReport:
 
     def test_print_stock_table_empty(self, capsys):
         """测试打印空股票表格."""
-        from src.backtest.report import _print_stock_table
+        from src.backtest.report import _print_stock_table_detailed
         
-        _print_stock_table([])
+        _print_stock_table_detailed([])
         captured = capsys.readouterr()
         assert captured.out == ''
 
     def test_print_stock_table_with_data(self, capsys):
         """测试打印股票表格."""
-        from src.backtest.report import _print_stock_table
+        from src.backtest.report import _print_stock_table_detailed
         
         stocks = [
             {
@@ -130,14 +130,13 @@ class TestPrintBacktestReport:
             },
         ]
         
-        _print_stock_table(stocks)
+        _print_stock_table_detailed(stocks)
         captured = capsys.readouterr()
         
-        assert '代码' in captured.out
-        assert '名称' in captured.out
+        assert '股票名称' in captured.out
         assert '行业' in captured.out
-        assert '5日收益%' in captured.out
-        assert '10日收益%' in captured.out
+        assert '5日收益率' in captured.out
+        assert '10日收益率' in captured.out
         assert '平安银行' in captured.out
         assert '5.23%' in captured.out
         assert '-2.15%' in captured.out

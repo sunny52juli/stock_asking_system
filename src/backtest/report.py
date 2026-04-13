@@ -20,6 +20,11 @@ def print_backtest_report(report: dict):
     print("\n回测报告详情 - 持仓股票及收益")
     print("=" * 100)
     
+    # 显示配置信息
+    config = report.get("config", {})
+    screening_date = config.get("screening_date", "N/A")
+    print(f"筛选日期：{screening_date}")
+    
     # 各策略详情
     results = report.get("results", [])
     if not results:
@@ -34,8 +39,9 @@ def print_backtest_report(report: dict):
             print(f"   ❌ 执行失败：{result.get('error', '未知错误')}")
             continue
         
-        candidates_count = len(result.get("candidates", []))
-        print(f"\n前 {candidates_count} 大持仓股票：")
+        # 获取候选股票数（优先使用 candidates_count，否则计算 candidates 列表长度）
+        candidates_count = result.get("candidates_count") or len(result.get("candidates", []))
+        print(f"\n候选股票数：{candidates_count}")
         
         # 持仓股票详情
         holding_stocks = result.get("holding_stocks", [])
