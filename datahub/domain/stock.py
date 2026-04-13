@@ -7,6 +7,7 @@ import pandas as pd
 from datahub.core.dataset import Dataset
 from datahub.core.query import Query
 from datahub.core.repository import Repository
+from datahub.domain._helpers import load_with_date_or_range
 
 
 class Stock:
@@ -25,26 +26,15 @@ class Stock:
         fields: list[str] | None = None,
     ) -> pd.DataFrame:
         """Daily stock quotes (OHLCV + merged indicators). Single day or range."""
-        if date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.STOCK_DAILY,
-                    date=date,
-                    codes=codes,
-                    fields=fields,
-                )
-            )
-        if start_date is not None and end_date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.STOCK_DAILY,
-                    start_date=start_date,
-                    end_date=end_date,
-                    codes=codes,
-                    fields=fields,
-                )
-            )
-        raise ValueError("Provide either date or (start_date, end_date)")
+        return load_with_date_or_range(
+            self._repo,
+            Dataset.STOCK_DAILY,
+            date=date,
+            start_date=start_date,
+            end_date=end_date,
+            codes=codes,
+            fields=fields,
+        )
 
     def universe_by_index(
         self,
@@ -55,24 +45,14 @@ class Stock:
         end_date: str | None = None,
     ) -> pd.DataFrame:
         """Index constituents and weights. Single date or range."""
-        if date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.STOCK_INDEX_WEIGHT,
-                    date=date,
-                    index_code=index_code,
-                )
-            )
-        if start_date is not None and end_date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.STOCK_INDEX_WEIGHT,
-                    start_date=start_date,
-                    end_date=end_date,
-                    index_code=index_code,
-                )
-            )
-        raise ValueError("Provide either date or (start_date, end_date)")
+        return load_with_date_or_range(
+            self._repo,
+            Dataset.STOCK_INDEX_WEIGHT,
+            date=date,
+            start_date=start_date,
+            end_date=end_date,
+            index_code=index_code,
+        )
 
     def universe(self) -> pd.DataFrame:
         """Stock basic listing info (single snapshot)."""

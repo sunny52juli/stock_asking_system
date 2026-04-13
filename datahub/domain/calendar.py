@@ -54,16 +54,35 @@ class Calendar:
         """Return the latest trade date strictly before before_date (YYYYMMDD), or None.
         
         Uses exchange_calendars for accurate Chinese stock market holidays.
+        
+        Note: Returns the latest trade date < before_date (not <=)
         """
         try:
             # Convert YYYYMMDD to pandas Timestamp format
             before_ts = f"{before_date[:4]}-{before_date[4:6]}-{before_date[6:8]}"
             
-            # Get previous session
-            prev_session = self._calendar.previous_session(before_ts)
+            # Strategy: Get all sessions up to before_date, then take the last one before before_date
+            # We need to go back a bit to ensure we find at least one session
+            from datetime import timedelta
+            import pandas as pd
             
-            # Convert to YYYYMMDD format
-            return prev_session.strftime("%Y%m%d")
+            before_dt = pd.Timestamp(before_ts)
+            # Go back 30 days to ensure we find a trading day
+            start_search = before_dt - timedelta(days=30)
+            
+            # Get all sessions in the search range
+            sessions = self._calendar.sessions_in_range(start_search, before_dt)
+            
+            if len(sessions) == 0:
+                return None
+            
+            # Find the latest session that is strictly before before_date
+            for session in reversed(sessions):
+                if session < before_dt:
+                    return session.strftime("%Y%m%d")
+            
+            # If no session is strictly before, return None
+            return None
         except Exception as e:
             # Log error for debugging
             import logging

@@ -7,6 +7,7 @@ import pandas as pd
 from datahub.core.dataset import Dataset
 from datahub.core.query import Query
 from datahub.core.repository import Repository
+from datahub.domain._helpers import load_with_date_or_range
 
 
 class Index:
@@ -23,24 +24,14 @@ class Index:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> pd.DataFrame:
-        if date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.STOCK_INDEX_WEIGHT,
-                    date=date,
-                    index_code=index_code,
-                )
-            )
-        if start_date is not None and end_date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.STOCK_INDEX_WEIGHT,
-                    start_date=start_date,
-                    end_date=end_date,
-                    index_code=index_code,
-                )
-            )
-        raise ValueError("Provide either date or (start_date, end_date)")
+        return load_with_date_or_range(
+            self._repo,
+            Dataset.STOCK_INDEX_WEIGHT,
+            date=date,
+            start_date=start_date,
+            end_date=end_date,
+            index_code=index_code,
+        )
 
     def available_dates(self, index_code: str | None = None) -> list[str]:
         return self._repo.available_dates(Dataset.STOCK_INDEX_WEIGHT)
@@ -89,24 +80,14 @@ class Index:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> pd.DataFrame:
-        if date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.INDEX_VALUATION,
-                    date=date,
-                    index_code=index_code,
-                )
-            )
-        if start_date is not None and end_date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.INDEX_VALUATION,
-                    start_date=start_date,
-                    end_date=end_date,
-                    index_code=index_code,
-                )
-            )
-        raise ValueError("Provide either date or (start_date, end_date)")
+        return load_with_date_or_range(
+            self._repo,
+            Dataset.INDEX_VALUATION,
+            date=date,
+            start_date=start_date,
+            end_date=end_date,
+            index_code=index_code,
+        )
 
     def weights(
         self,
@@ -117,26 +98,15 @@ class Index:
         end_date: str | None = None,
         codes: list[str] | None = None,
     ) -> pd.DataFrame:
-        if date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.STOCK_INDEX_WEIGHT,
-                    date=date,
-                    index_code=index_code,
-                    codes=codes,
-                )
-            )
-        if start_date is not None and end_date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.STOCK_INDEX_WEIGHT,
-                    start_date=start_date,
-                    end_date=end_date,
-                    index_code=index_code,
-                    codes=codes,
-                )
-            )
-        raise ValueError("Provide either date or (start_date, end_date)")
+        return load_with_date_or_range(
+            self._repo,
+            Dataset.STOCK_INDEX_WEIGHT,
+            date=date,
+            start_date=start_date,
+            end_date=end_date,
+            index_code=index_code,
+            codes=codes,
+        )
 
     def rebalance_history(
         self,

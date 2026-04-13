@@ -8,13 +8,13 @@ from datahub.loaders.stock_loader import (
     StockDataLoader,
     create_stock_data_loader,
     get_available_industries,
-    load_market_data,
+    load_latest_market_data,
 )
 
 __all__ = [
     "StockDataLoader",
     "FactorDataLoader",
     "create_stock_data_loader",
-    "load_market_data",
+    "load_latest_market_data",
     "get_available_industries",
 ]

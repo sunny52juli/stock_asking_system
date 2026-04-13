@@ -31,6 +31,8 @@ dependencies = [
     "langchain-openai>=0.2.0",
     "mcp>=1.26.0,<2.0.0",
     "exchange-calendars>=1.15.0",
+    # Stock Asking MCP (workspace dependency)
+    "stock-asking-mcp",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +43,11 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.6.0",
     "pre-commit>=3.5.0",
+]
+telemetry = [
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp>=1.20.0",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -56,7 +63,7 @@ Issues = "https://github.com/quantteam/quantitative-system/issues"
 [project.scripts]
 quant-factor = "factor_backtest_system.run_factor_mining:main"
 quant-query = "stock_asking_system.run_stock_query:main"
-quant-query-deepagent = "screener_deepagent.run:main"
+quant-query-deepagent = "core.agent.run:main"
 quant-mcp-server = "core.mcp.factor_tools_mcp:main"
 datahub = "datahub.cli:main"
 
@@ -64,8 +71,15 @@ datahub = "datahub.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# UV Workspace 配置
+[tool.uv.workspace]
+members = ["stock-asking-mcp"]
+
+[tool.uv.sources]
+stock-asking-mcp = { workspace = true }
+
 [tool.hatch.build.targets.wheel]
-packages = ["config", "core", "datahub", "factor_backtest_system", "stock_asking_system", "screener_deepagent"]
+packages = ["config", "core", "datahub", "factor_backtest_system", "stock_asking_system", "core.agent"]
 
 [tool.black]
 line-length = 100
@@ -112,7 +126,7 @@ ignore = [
     "C901",  # too complex
     "SIM108",  # prefer if/else over ternary for readability
 ]
-per-file-ignores = { "__init__.py" = ["F401"], "datahub/entries.py" = ["N802"], "config/data_fields.py" = ["N815"], "config/factor_backtest_config.py" = ["N802"], "stock_asking_system/backtest/run_script_backtest.py" = ["E402"], "stock_asking_system/run_stock_query.py" = ["E402"], "factor_backtest_system/run_factor_mining.py" = ["E402"], "factor_backtest_system/backtest/factor_backtest.py" = ["E402"], "core/mcp/examples_usage.py" = ["E402"], "core/mcp/exceptions.py" = ["E402"], "screener_deepagent/screening_scripts" = ["E402"], "screener_deepagent/run.py" = ["E402"], "data2parquet/data_generator.py" = ["E402"], "data2parquet/data_saver.py" = ["E402"] }
+per-file-ignores = { "__init__.py" = ["F401"], "datahub/entries.py" = ["N802"], "config/data_fields.py" = ["N815"], "config/factor_backtest_config.py" = ["N802"], "stock_asking_system/backtest/run_script_backtest.py" = ["E402"], "stock_asking_system/run_stock_query.py" = ["E402"], "factor_backtest_system/run_factor_mining.py" = ["E402"], "factor_backtest_system/backtest/factor_backtest.py" = ["E402"], "core/mcp/examples_usage.py" = ["E402"], "core/mcp/exceptions.py" = ["E402"], "core.agent/screening_scripts" = ["E402"], "core.agent/run.py" = ["E402"], "data2parquet/data_generator.py" = ["E402"], "data2parquet/data_saver.py" = ["E402"] }
 
 [tool.mypy]
 python_version = "3.12"
@@ -139,7 +153,7 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["screener_mcp.*", "screener_deepagent.*"]
+module = ["core.agent.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -155,7 +169,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["config", "core", "datahub", "factor_backtest_system", "stock_asking_system", "screener_deepagent"]
+source = ["config", "core", "datahub", "factor_backtest_system", "stock_asking_system", "core.agent"]
 omit = [
     "*/tests/*",
     "*/test_*",

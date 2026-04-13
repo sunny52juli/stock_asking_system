@@ -8,6 +8,7 @@ import pandas as pd
 from datahub.core.dataset import Dataset
 from datahub.core.query import Query
 from datahub.core.repository import Repository
+from datahub.domain._helpers import load_with_date_or_range
 
 
 class Fund:
@@ -26,26 +27,15 @@ class Fund:
         fields: list[str] | None = None,
     ) -> pd.DataFrame:
         """Fund NAV. Single date or range."""
-        if date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.FUND_NAV,
-                    date=date,
-                    codes=codes,
-                    fields=fields,
-                )
-            )
-        if start_date is not None and end_date is not None:
-            return self._repo.load(
-                Query(
-                    dataset=Dataset.FUND_NAV,
-                    start_date=start_date,
-                    end_date=end_date,
-                    codes=codes,
-                    fields=fields,
-                )
-            )
-        raise ValueError("Provide either date or (start_date, end_date)")
+        return load_with_date_or_range(
+            self._repo,
+            Dataset.FUND_NAV,
+            date=date,
+            start_date=start_date,
+            end_date=end_date,
+            codes=codes,
+            fields=fields,
+        )
 
     def available_dates(self) -> list[str]:
         """Available dates for fund nav dataset."""

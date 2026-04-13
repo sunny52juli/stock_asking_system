@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable, TypeVar
 
 from datahub.domain.calendar import Calendar as _Calendar
 from datahub.domain.feature import Feature as _Feature
@@ -19,6 +20,8 @@ from datahub.protocols import (
     StockProtocol,
 )
 
+T = TypeVar('T')
+
 
 def _create_repo(
     *,
@@ -30,6 +33,30 @@ def _create_repo(
 
     root_str = str(root) if isinstance(root, Path) else root
     return Factory.create_repo(root=root_str, token=token, mode=mode)
+
+
+def _create_domain_instance(
+    domain_class: Callable[[object], T],
+    root: str | Path | None = None,
+    mode: str = "auto",
+    token: str | None = None,
+    repo: object | None = None,
+) -> T:
+    """Create a domain instance with DRY pattern.
+    
+    Args:
+        domain_class: Domain class constructor (e.g., _Stock, _Fund)
+        root: Cache root path
+        mode: Repository mode (auto/local/remote)
+        token: API token
+        repo: Optional pre-created repository
+        
+    Returns:
+        Domain instance
+    """
+    if repo is not None:
+        return domain_class(repo)
+    return domain_class(_create_repo(root=root, mode=mode, token=token))
 
 
 class DataHub:
@@ -87,9 +114,7 @@ def Stock(
     repo: object | None = None,
 ) -> StockProtocol:
     """Return stock dataset. Config from env when root/token/repo not passed."""
-    if repo is not None:
-        return _Stock(repo)
-    return _Stock(_create_repo(root=root, mode=mode, token=token))
+    return _create_domain_instance(_Stock, root=root, mode=mode, token=token, repo=repo)
 
 
 def Fund(
@@ -99,9 +124,7 @@ def Fund(
     repo: object | None = None,
 ) -> FundProtocol:
     """Return fund dataset. Config from env when root/token/repo not passed."""
-    if repo is not None:
-        return _Fund(repo)
-    return _Fund(_create_repo(root=root, mode=mode, token=token))
+    return _create_domain_instance(_Fund, root=root, mode=mode, token=token, repo=repo)
 
 
 def Index(
@@ -111,9 +134,7 @@ def Index(
     repo: object | None = None,
 ) -> IndexProtocol:
     """Return index dataset. Config from env when root/token/repo not passed."""
-    if repo is not None:
-        return _Index(repo)
-    return _Index(_create_repo(root=root, mode=mode, token=token))
+    return _create_domain_instance(_Index, root=root, mode=mode, token=token, repo=repo)
 
 
 def News(
@@ -123,9 +144,7 @@ def News(
     repo: object | None = None,
 ) -> NewsProtocol:
     """Return news dataset. Config from env when root/token/repo not passed."""
-    if repo is not None:
-        return _News(repo)
-    return _News(_create_repo(root=root, mode=mode, token=token))
+    return _create_domain_instance(_News, root=root, mode=mode, token=token, repo=repo)
 
 
 def Calendar(

@@ -12,12 +12,12 @@ from datahub.loaders.base import BaseDataLoader
 from datahub.loaders.stock_loader import _get_stock_pool_from_datahub
 
 try:
-    from config.backtest_config import StockConfig
+    from infrastructure.config.settings import StockConfig
 except ImportError:
     StockConfig = None  # type: ignore[misc, assignment]
 
 try:
-    from utils.exceptions import DataLoadError, StockPoolError
+    from infrastructure.errors.exceptions import DataLoadError, StockPoolError
 except ImportError:
     DataLoadError = Exception  # type: ignore[misc, assignment]
     StockPoolError = Exception  # type: ignore[misc, assignment]

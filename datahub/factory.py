@@ -1,6 +1,6 @@
 from pathlib import Path
+import os
 
-from config.data_config import DataConfig
 from datahub.core.repository import Repository
 from datahub.service.data_service import DataService
 from datahub.source.tushare_source import TushareSource
@@ -24,7 +24,9 @@ class Factory:
         token: str | None = None,
         mode: str = "auto",
     ) -> Repository:
-        root_path = Path(root or DataConfig.DATA_CACHE_ROOT)
+        # 从环境变量获取配置，不依赖 infrastructure
+        cache_root = root or os.getenv("DATA_CACHE_ROOT", "data_cache")
+        root_path = Path(cache_root)
         store = ParquetStore(root_path)
 
         if mode == "local":
@@ -39,7 +41,8 @@ class Factory:
 
     @staticmethod
     def store(root: str | None = None) -> ParquetStore:
-        return ParquetStore(Path(root or DataConfig.DATA_CACHE_ROOT))
+        cache_root = root or os.getenv("DATA_CACHE_ROOT", "data_cache")
+        return ParquetStore(Path(cache_root))
 
     @staticmethod
     def source(token: str | None = None) -> TushareSource:

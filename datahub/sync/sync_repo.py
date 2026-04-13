@@ -124,6 +124,45 @@ class SyncRepository(Repository):
         meta: DatasetMeta,
         pipeline: list[FetchStep],
     ) -> pd.DataFrame:
+        # 如果指定日期不是交易日，自动选择最近的交易日
+        from datahub.domain.calendar import Calendar as CalendarDomain
+        calendar_domain = CalendarDomain()
+        
+        adjusted_start_date = query.start_date
+        adjusted_end_date = query.end_date
+        
+        # 只调整 end_date（往前找最近交易日），不调整 start_date（保证数据范围）
+        if query.end_date and not calendar_domain.is_trade_day(query.end_date):
+            # end_date 不是交易日，找到之前最后一个交易日
+            latest_trade_date = calendar_domain.get_latest_trade_date(
+                str(int(query.end_date) + 1)  # get_latest_trade_date 返回严格小于给定日期的交易日
+            )
+            if latest_trade_date and latest_trade_date >= (query.start_date or ""):
+                adjusted_end_date = latest_trade_date
+                logger.info(
+                    "📅 End date %s is not a trade day, adjusted to %s",
+                    query.end_date,
+                    adjusted_end_date,
+                )
+            else:
+                logger.warning("⚠️ No trade days found before %s, using original date", query.end_date)
+        
+        # 使用调整后的日期创建新的 query
+        if adjusted_start_date != query.start_date or adjusted_end_date != query.end_date:
+            query = Query(
+                dataset=query.dataset,
+                start_date=adjusted_start_date,
+                end_date=adjusted_end_date,
+                codes=query.codes,
+                fields=query.fields,
+                index_code=query.index_code,
+            )
+            logger.info(
+                "📅 Date range adjusted: %s~%s → %s~%s",
+                query.start_date, query.end_date,
+                adjusted_start_date, adjusted_end_date,
+            )
+        
         # 优先使用交易日历过滤非交易日
         if query.start_date and query.end_date:
             try:
@@ -245,52 +284,73 @@ class SyncRepository(Repository):
         meta: DatasetMeta,
         pipeline: list[FetchStep],
     ) -> pd.DataFrame:
-        try:
-            result = self.store.load(query)
-            if not result.empty:
-                return result
-        except DataNotFoundError:
-            pass
-
-        data = self._execute_pipeline(pipeline, query)
-        if data is None or data.empty:
+        # 范围查询：先检查缓存完整性，缺失则逐日填充
+        from datahub.domain.calendar import Calendar
+        
+        calendar = Calendar()
+        trade_dates = calendar.get_trade_dates(query.start_date, query.end_date)
+        
+        if not trade_dates:
+            raise DataNotFoundError(f"No trading days in {query.start_date}~{query.end_date}")
+        
+        logger.info("📅 Range query: checking %d trading days (%s ~ %s)", len(trade_dates), query.start_date, query.end_date)
+        
+        all_results: list[pd.DataFrame] = []
+        missing_dates: list[str] = []
+        
+        # 第一步：检查每个交易日的缓存
+        for trade_date in trade_dates:
+            single_query = Query(
+                dataset=query.dataset,
+                date=trade_date,
+                codes=query.codes,
+                fields=query.fields,
+                index_code=query.index_code,
+            )
+            
+            try:
+                cached = self.store.load(single_query)
+                if not cached.empty:
+                    all_results.append(cached)
+                else:
+                    missing_dates.append(trade_date)
+            except DataNotFoundError:
+                missing_dates.append(trade_date)
+        
+        # 第二步：如果有缺失日期，执行 pipeline 填充
+        if missing_dates:
+            logger.warning("⚠️ Missing %d dates, fetching from API: %s...", len(missing_dates), missing_dates[:3])
+            
+            for trade_date in missing_dates:
+                day_result = self._execute_single_day_pipeline(pipeline, trade_date, query)
+                if day_result is not None and not day_result.empty:
+                    all_results.append(day_result)
+                    
+                    # 自动缓存
+                    if meta.date_column and meta.date_column in day_result.columns:
+                        pk = meta.partition_key_template.format(
+                            date=trade_date,
+                            index_code=(query.index_code or "").replace(".", "_"),
+                        )
+                        self._safe_save(query.dataset, day_result, pk)
+        
+        if not all_results:
             raise DataNotFoundError(f"No data for {query.dataset.value} range query")
-
-        # 数据质量检测（范围查询）
-        nan_ratio = self._check_data_quality(data)
+        
+        result = pd.concat(all_results, ignore_index=True)
+        logger.info("✅ Range query completed: %d rows from %d days", len(result), len(all_results))
+        
+        # 数据质量检测
+        nan_ratio = self._check_data_quality(result)
         if nan_ratio > 0.5:
             logger.error(
-                "❌ Data quality check FAILED: %s range query has %.1f%% NaN values. "
-                "This data will NOT be saved to cache.",
-                query.dataset.value,
+                "❌ Data quality check FAILED: %.1f%% NaN values. Not saving to cache.",
                 nan_ratio * 100,
             )
-            save_flag_backup = self.auto_save
-            self.auto_save = False
-            try:
-                return self._apply_filters(data, query, meta)
-            finally:
-                self.auto_save = save_flag_backup
         elif nan_ratio > 0.1:
-            logger.warning(
-                "⚠️ Data quality WARNING: %s range query has %.1f%% NaN values.",
-                query.dataset.value,
-                nan_ratio * 100,
-            )
-
-        if self.auto_save and data is not None and not data.empty:
-            if meta.partition_by == "none" or not meta.date_column:
-                partition_key = self._resolve_partition_key(query, meta)
-                self._safe_save(query.dataset, data, partition_key)
-            elif meta.date_column in data.columns:
-                for date_val, group in data.groupby(meta.date_column):
-                    pk = meta.partition_key_template.format(
-                        date=str(date_val),
-                        index_code=(query.index_code or "").replace(".", "_"),
-                    )
-                    self._safe_save(query.dataset, group, pk)
-
-        return self._apply_filters(data, query, meta)
+            logger.warning("⚠️ Data quality WARNING: %.1f%% NaN values.", nan_ratio * 100)
+        
+        return self._apply_filters(result, query, meta)
 
     def _execute_pipeline(
         self,
@@ -300,6 +360,17 @@ class SyncRepository(Repository):
         base: pd.DataFrame | None = None
 
         for i, step in enumerate(pipeline):
+            # 范围查询时，跳过只依赖 date 参数的可选步骤
+            if query.is_range and step.optional:
+                mapping_values = set(step.param_mapping.values())
+                is_date_only_api = mapping_values <= {"date", "trade_date"}
+                if is_date_only_api:
+                    logger.debug(
+                        "Skipping optional date-only step %s in range query",
+                        step.api_name,
+                    )
+                    continue
+            
             params = self._build_api_params(step, query)
 
             result = self.source.call(step.api_name, params)
@@ -347,6 +418,7 @@ class SyncRepository(Repository):
             if value is not None:
                 params[api_param] = value
         params.update(step.fixed_params)
+        
         if step.fields:
             params["fields"] = ",".join(step.fields)
         return params
@@ -435,3 +507,55 @@ class SyncRepository(Repository):
             dates.append(current.strftime("%Y%m%d"))
             current += timedelta(days=1)
         return dates
+    
+    def _execute_single_day_pipeline(
+        self,
+        pipeline: list[FetchStep],
+        trade_date: str,
+        original_query: Query,
+    ) -> pd.DataFrame | None:
+        """执行单日的 pipeline。"""
+        base: pd.DataFrame | None = None
+        
+        for i, step in enumerate(pipeline):
+            # 构建单日查询参数
+            single_query = Query(
+                dataset=original_query.dataset,
+                date=trade_date,
+                codes=original_query.codes,
+                fields=original_query.fields,
+                index_code=original_query.index_code,
+            )
+            
+            params = self._build_api_params(step, single_query)
+            
+            result = self.source.call(step.api_name, params)
+            if step.rate_limit_sleep > 0:
+                time.sleep(step.rate_limit_sleep)
+            
+            if result is None or result.empty:
+                if i == 0:
+                    return None
+                if not step.optional:
+                    logger.debug("Step %s returned empty for %s", step.api_name, trade_date)
+                continue
+            
+            if step.fields:
+                keep = list(set(step.fields) | set(step.merge_on))
+                available = [c for c in keep if c in result.columns]
+                result = result[available]
+            
+            if i == 0:
+                base = result
+            else:
+                base = base.merge(
+                    result,
+                    on=step.merge_on,
+                    how="left",
+                    suffixes=("", f"__{step.api_name}"),
+                )
+        
+        if base is not None:
+            base = self._clean_duplicate_columns(base)
+        
+        return base

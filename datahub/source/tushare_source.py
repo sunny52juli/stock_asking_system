@@ -5,7 +5,7 @@ from typing import Any
 import pandas as pd
 import tushare as ts
 
-from config.data_config import DataConfig
+from infrastructure.config.settings import get_settings
 from datahub.core.source import DataSource
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class TushareSource(DataSource):
         max_retry: int = 3,
         retry_delay: float = 2.0,
     ) -> None:
-        self.token = token or DataConfig.DATA_SOURCE_TOKEN
+        self.token = token or get_settings().data.source_token
         if not self.token:
             raise ValueError("Tushare token not configured")
         ts.set_token(self.token)

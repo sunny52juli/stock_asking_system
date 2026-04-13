@@ -12,12 +12,6 @@ import pandas as pd
 from datahub.entries import Calendar, Stock
 from datahub.loaders.base import BaseDataLoader
 
-try:
-    from utils.exceptions import DataLoadError, StockPoolError
-except ImportError:
-    DataLoadError = Exception  # type: ignore[misc, assignment]
-    StockPoolError = Exception  # type: ignore[misc, assignment]
-
 
 def _get_stock_pool_from_datahub(
     stock: Stock,
@@ -92,7 +86,7 @@ class StockDataLoader(BaseDataLoader):
     def load_data(self, **kwargs: object) -> pd.DataFrame:
         return self.load_market_data(**kwargs)
 
-    def load_market_data(self, force_reload: bool = False, trade_date_for_pool: str | None = None, start_date: str | None = None, end_date: str | None = None) -> pd.DataFrame:
+    def load_market_data(self, force_reload: bool = False, trade_date_for_pool: str | None = None, start_date: str | None = None, end_date: str | None = None, observation_days: int | None = None) -> pd.DataFrame:
         """Load market data.
         
         Args:
@@ -102,6 +96,7 @@ class StockDataLoader(BaseDataLoader):
                                 Recommended to set explicitly to avoid future date issues.
             start_date: Start date for price data (YYYYMMDD). If None, auto-calculated from backtest_config or trade_date_for_pool
             end_date: End date for price data (YYYYMMDD). If None, uses trade_date_for_pool
+            observation_days: Number of trading days for lookback period. If None, uses config default
         """
         if self._data is not None and not force_reload:
             print("📊 使用缓存的市场数据")
@@ -110,52 +105,15 @@ class StockDataLoader(BaseDataLoader):
         
         # 如果 trade_date_for_pool 未提供，尝试获取最新可用日期
         if trade_date_for_pool is None:
-            try:
-                # 从 calendar 获取最新交易日
-                calendar = self._calendar or Calendar()
-                latest_date = calendar.latest_trade_date()
-                if latest_date:
-                    trade_date_for_pool = latest_date.strftime("%Y%m%d")
-            except Exception:
-                # 如果无法获取，使用当前日期（可能会有问题，但是是备用方案）
-                from datetime import datetime
-                trade_date_for_pool = datetime.now().strftime("%Y%m%d")
+            trade_date_for_pool = self._get_latest_trade_date()
         
         # 如果没有提供 start_date 和 end_date，使用最新交易日期为基准
         if start_date is None or end_date is None:
-            try:
-                # 从 calendar 获取最新交易日
-                calendar = self._calendar or Calendar()
-                latest_date = calendar.latest_trade_date()
-                if latest_date:
-                    latest_date_str = latest_date.strftime("%Y%m%d")
-                    # 如果没有指定，使用最新日期作为 end_date
-                    if end_date is None:
-                        end_date = latest_date_str
-                    # 如果没有指定 start_date，往前推 60 天
-                    if start_date is None:
-                        from datetime import timedelta
-                        end_dt = datetime.strptime(end_date, "%Y%m%d")
-                        start_dt = end_dt - timedelta(days=60)
-                        start_date = start_dt.strftime("%Y%m%d")
-                else:
-                    # 如果无法获取最新日期，使用当前日期
-                    from datetime import timedelta, datetime
-                    if end_date is None:
-                        end_date = datetime.now().strftime("%Y%m%d")
-                    if start_date is None:
-                        end_dt = datetime.strptime(end_date, "%Y%m%d")
-                        start_dt = end_dt - timedelta(days=60)
-                        start_date = start_dt.strftime("%Y%m%d")
-            except Exception:
-                # 备用方案：使用当前日期
-                from datetime import timedelta, datetime
-                if end_date is None:
-                    end_date = datetime.now().strftime("%Y%m%d")
-                if start_date is None:
-                    end_dt = datetime.strptime(end_date, "%Y%m%d")
-                    start_dt = end_dt - timedelta(days=60)
-                    start_date = start_dt.strftime("%Y%m%d")
+            default_start, default_end = self._calculate_default_dates(trade_date_for_pool, observation_days)
+            if start_date is None:
+                start_date = default_start
+            if end_date is None:
+                end_date = default_end
         
         self._stock_pool = _get_stock_pool_from_datahub(
             self._stock,
@@ -165,7 +123,7 @@ class StockDataLoader(BaseDataLoader):
             min_list_days=self.min_list_days,
         )
         if not self._stock_pool:
-            raise StockPoolError("无法获取股票池数据，请检查本地数据是否存在")
+            raise ValueError("无法获取股票池数据，请检查本地数据是否存在")
         print(f"📊 股票池共 {len(self._stock_pool)} 只股票")
         
         # 加载价格数据
@@ -192,6 +150,50 @@ class StockDataLoader(BaseDataLoader):
         print(f"✅ 已加载市场数据：{len(df)} 条记录")
         return df
 
+
+    def _get_latest_trade_date(self) -> str:
+        """获取最新交易日期。
+        
+        Returns:
+            交易日期字符串 (YYYYMMDD)
+        """
+        try:
+            # 从 calendar 获取最新交易日
+            calendar = self._calendar or Calendar()
+            latest_date = calendar.latest_trade_date()
+            if latest_date:
+                return latest_date.strftime("%Y%m%d")
+        except Exception:
+            pass
+        
+        # 备用方案：使用当前日期
+        from datetime import datetime
+        return datetime.now().strftime("%Y%m%d")
+    
+    def _calculate_default_dates(self, reference_date: str, observation_days: int | None = None) -> tuple[str, str]:
+        """计算默认的 start_date 和 end_date。
+        
+        Args:
+            reference_date: 参考日期 (YYYYMMDD)
+            observation_days: 观察期长度（交易日），默认从配置读取
+            
+        Returns:
+            (start_date, end_date) 元组
+        """
+        from utils.screening.screening_tools import get_data_start_date
+        
+        try:
+            end_dt = datetime.strptime(reference_date, "%Y%m%d")
+            end_date = reference_date
+        except ValueError:
+            # 如果解析失败，使用当前日期
+            end_dt = datetime.now()
+            end_date = end_dt.strftime("%Y%m%d")
+        
+        # 使用配置的 observation_days 计算起始日期
+        start_date = get_data_start_date(end_date, observation_days)
+        
+        return start_date, end_date
 
     def _supplement_industry(self, data: pd.DataFrame) -> pd.DataFrame:
         if "industry" in data.columns:
@@ -232,57 +234,51 @@ def create_stock_data_loader(
     )
 
 
-def load_market_data(
-    exclude_st: bool = True,
-    min_list_days: int = 180,
-    index_code: str | None = None,
-) -> pd.DataFrame:
-    """Load market data.
-    
-    默认使用最新交易日期，不依赖 backtest_config。
-    适用于策略脚本独立运行时的数据加载。
+def get_available_industries(data: pd.DataFrame | None = None) -> list[str]:
+    """获取可用的行业列表
     
     Args:
-        exclude_st: Whether to exclude ST stocks
-        min_list_days: Minimum listing days
-        index_code: Optional index code to restrict stock universe
+        data: 可选的 DataFrame，如果提供则从中提取行业；否则从数据源加载
+        
+    Returns:
+        行业列表（已排序）
+    """
+    if data is not None:
+        # 从提供的 DataFrame 中提取
+        if "industry" not in data.columns:
+            return []
+        if isinstance(data.index, pd.MultiIndex):
+            industries = data.reset_index()["industry"].dropna().unique()
+        else:
+            industries = data["industry"].dropna().unique()
+        return sorted([str(i) for i in industries if str(i).strip()])
+    
+    # 从数据源加载
+    loader = StockDataLoader()
+    loader.load_market_data()
+    return loader.get_available_industries()
+
+
+def load_latest_market_data(recent_days: int = 60) -> pd.DataFrame:
+    """加载最近交易日的市场数据。
+    
+    自动从数据源拉取最新 N 天的数据，包含行业信息和 MultiIndex。
+    
+    Args:
+        recent_days: 拉取最近多少天的数据，默认 60 天
         
     Returns:
         DataFrame with MultiIndex (trade_date, ts_code)
     """
-    # 获取最新交易日期作为股票池日期
-    try:
-        from datahub import Calendar
-        calendar = Calendar()
-        latest_date = calendar.latest_trade_date()
-        if latest_date:
-            trade_date_for_pool = latest_date.strftime("%Y%m%d")
-        else:
-            # 如果无法获取，使用当前日期
-            from datetime import datetime
-            trade_date_for_pool = datetime.now().strftime("%Y%m%d")
-    except Exception:
-        # 备用方案：使用当前日期
-        from datetime import datetime
-        trade_date_for_pool = datetime.now().strftime("%Y%m%d")
+    from datetime import datetime, timedelta
     
-    loader = create_stock_data_loader(
-        exclude_st=exclude_st,
-        min_list_days=min_list_days,
-        index_code=index_code,
+    # 计算日期范围
+    today = datetime.now().strftime("%Y%m%d")
+    start_date = (datetime.now() - timedelta(days=recent_days)).strftime("%Y%m%d")
+    
+    # 使用 StockDataLoader 加载数据
+    loader = StockDataLoader()
+    return loader.load_market_data(
+        start_date=start_date,
+        end_date=today,
     )
-    return loader.load_market_data(trade_date_for_pool=trade_date_for_pool)
-
-
-def get_available_industries(data: pd.DataFrame | None = None) -> list[str]:
-    if data is None:
-        loader = StockDataLoader()
-        loader.load_market_data()
-        return loader.get_available_industries()
-    if "industry" not in data.columns:
-        return []
-    if isinstance(data.index, pd.MultiIndex):
-        industries = data.reset_index()["industry"].dropna().unique()
-    else:
-        industries = data["industry"].dropna().unique()
-    return sorted([str(i) for i in industries if str(i).strip()])

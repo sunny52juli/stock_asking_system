@@ -60,7 +60,7 @@ memory/
 *.db
 *.sqlite
 *.sqlite3
-data_cache/
+
 
 # LangGraph checkpoints (会话状态)
 checkpoints/
@@ -68,10 +68,6 @@ checkpoints/
 # Agent transcripts (对话历史)
 agent-transcripts/
 
-# Datahub cache (Tushare 数据缓存)
-datahub/cache/
-datahub/**/*.parquet
-datahub/**/*.csv
 
 # Temporary files
 tmp/
