@@ -47,10 +47,11 @@ Backtest Engine 提供完整的策略回测功能,支持多持有期测试、收
 
 ```
 src/backtest/
-├── __init__.py                     
+├── __init__.py                     # 模块入口
 ├── engine.py                       # 回测主引擎 BacktestEngine
 ├── returns.py                      # 收益计算器 ReturnsCalculator
-└── report.py                       # 报告生成器 ReportGenerator
+├── report.py                       # 报告生成器 ReportGenerator
+└── utils.py                        # 工具函数
 
 app/backtest_results/               # 回测结果存储
 └── ...

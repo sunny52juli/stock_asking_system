@@ -47,6 +47,25 @@ class DataFields:
         "volatility": "volatility",  # 波动率
     }
 
+    # 估值指标字段
+    _VALUATION_MAP: ClassVar[dict[str, str]] = {
+        "换手率": "turnover_rate",
+        "自由流通换手率": "turnover_rate_f",
+        "量比": "volume_ratio",
+        "市盈率": "pe",
+        "市盈率TTM": "pe_ttm",
+        "市净率": "pb",
+        "市销率": "ps",
+        "市销率TTM": "ps_ttm",
+        "股息率": "dv_ratio",
+        "股息率TTM": "dv_ttm",
+        "总股本": "total_share",
+        "流通股本": "float_share",
+        "自由流通股本": "free_share",
+        "总市值": "total_mv",
+        "流通市值": "circ_mv",
+    }
+
     # 行业/市场字段
     _CATEGORY_MAP: ClassVar[dict[str, str]] = {
         "industry": "industry",
@@ -74,7 +93,8 @@ class DataFields:
 
     # 双向映射字典（自动生成）
     PRICE_FIELDS: ClassVar[dict[str, str]] = _build_bidirectional_mapping(_PRICE_MAP)
-    vol_FIELDS: ClassVar[dict[str, str]] = _build_bidirectional_mapping(_VOL_MAP)
+    VOL_FIELDS: ClassVar[dict[str, str]] = _build_bidirectional_mapping(_VOL_MAP)
+    VALUATION_FIELDS: ClassVar[dict[str, str]] = _build_bidirectional_mapping(_VALUATION_MAP)
     INFO_FIELDS: ClassVar[dict[str, str]] = _INFO_MAP  # 已经是英文，不需要双向
     DERIVED_FIELDS: ClassVar[dict[str, str]] = _DERIVED_MAP  # 已经是英文
     CATEGORY_FIELDS: ClassVar[dict[str, str]] = _CATEGORY_MAP  # 已经是英文
@@ -82,7 +102,8 @@ class DataFields:
     # 合并所有字段
     ALL_FIELDS: ClassVar[dict[str, str]] = {
         **PRICE_FIELDS,
-        **vol_FIELDS,
+        **VOL_FIELDS,
+        **VALUATION_FIELDS,
         **INFO_FIELDS,
         **DERIVED_FIELDS,
         **CATEGORY_FIELDS,
@@ -93,16 +114,18 @@ class DataFields:
     
     # 数值字段（需要数值类型）
     NUMERIC_FIELDS: ClassVar[list[str]] = [
-        "open",
-        "high",
-        "low",
-        "close",
-        "vol",
-        "amount",
-        "vwap",
-        "pct_change",
-        "ret",
-        "volatility",
+        # 价格字段
+        "open", "high", "low", "close",
+        # 成交量字段
+        "vol", "amount",
+        # 估值指标字段
+        "turnover_rate", "turnover_rate_f", "volume_ratio",
+        "pe", "pe_ttm", "pb", "ps", "ps_ttm",
+        "dv_ratio", "dv_ttm",
+        "total_share", "float_share", "free_share",
+        "total_mv", "circ_mv",
+        # 衍生字段
+        "vwap", "pct_change", "ret", "volatility",
     ]
 
     @classmethod
@@ -140,7 +163,7 @@ class DataFields:
             field_name: 字段名
     
         Returns:
-            字段类型：'price', 'vol', 'info', 'derived', 'category', 'unknown'
+            字段类型：'price', 'vol', 'valuation', 'info', 'derived', 'category', 'unknown'
         """
         normalized = cls.normalize_field(field_name)
     
@@ -148,6 +171,8 @@ class DataFields:
             return "price"
         elif normalized in cls._VOL_MAP.values():
             return "vol"
+        elif normalized in cls._VALUATION_MAP.values():
+            return "valuation"
         elif normalized in cls._INFO_MAP.values():
             return "info"
         elif normalized in cls._DERIVED_MAP.values():
@@ -185,21 +210,42 @@ class DataFields:
             字段描述
         """
         descriptions = {
+            # 基础价格字段
             "open": "开盘价",
             "high": "最高价",
             "low": "最低价",
             "close": "收盘价",
+            # 成交量字段
             "vol": "成交量（手）",
             "amount": "成交金额（元）",
+            # 基础信息字段
             "date": "交易日期",
             "code": "股票代码",
             "ts_code": "股票代码（Tushare 格式）",
             "name": "股票名称",
+            # 估值指标字段
+            "turnover_rate": "换手率（%）",
+            "turnover_rate_f": "换手率（自由流通股）",
+            "volume_ratio": "量比",
+            "pe": "市盈率（总市值/净利润）",
+            "pe_ttm": "市盈率（TTM）",
+            "pb": "市净率",
+            "ps": "市销率",
+            "ps_ttm": "市销率（TTM）",
+            "dv_ratio": "股息率（%）",
+            "dv_ttm": "股息率（TTM）（%）",
+            "total_share": "总股本（万股）",
+            "float_share": "流通股本（万股）",
+            "free_share": "自由流通股本（万股）",
+            "total_mv": "总市值（万元）",
+            "circ_mv": "流通市值（万元）",
+            # 衍生字段
             "vwap": "成交量加权平均价",
             "pct_change": "日收益率",
             "ret": "收益率",
             "ret1": "次日收益率",
             "volatility": "波动率",
+            # 行业/市场字段
             "industry": "所属行业",
             "market": "所属市场",
         }
@@ -392,7 +438,7 @@ FIELD_MAPPING = {
     # 估值指标字段
     "换手率": "turnover_rate",
     "自由流通换手率": "turnover_rate_f",
-    "量比": "vol_ratio",
+    "量比": "volume_ratio",
     "市盈率": "pe",
     "市盈率TTM": "pe_ttm",
     "市净率": "pb",
@@ -481,7 +527,7 @@ FIELD_DESCRIPTIONS = {
     # 估值指标字段
     "turnover_rate": "换手率（%）",
     "turnover_rate_f": "换手率（自由流通股）",
-    "vol_ratio": "量比",
+    "volume_ratio": "量比",
     "pe": "市盈率（总市值/净利润，亏损的PE为空）",
     "pe_ttm": "市盈率（TTM，滚动12个月）",
     "pb": "市净率（总市值/净资产）",
@@ -547,7 +593,7 @@ def generate_field_markdown():
         "估值指标字段（每日指标）": [
             "turnover_rate",
             "turnover_rate_f",
-            "vol_ratio",
+            "volume_ratio",
             "pe",
             "pe_ttm",
             "pb",
@@ -628,7 +674,7 @@ def print_field_summary():
         "估值指标": [
             "turnover_rate",
             "turnover_rate_f",
-            "vol_ratio",
+            "volume_ratio",
             "pe",
             "pe_ttm",
             "pb",

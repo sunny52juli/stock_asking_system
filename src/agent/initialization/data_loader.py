@@ -26,6 +26,46 @@ class DataLoader:
         self.settings = settings
         self.industry_matcher: IndustryMatcher | None = None
     
+    def load_raw_market_data(self) -> tuple[pd.DataFrame, list[str]]:
+        """加载原始市场数据（不过滤）.
+        
+        Returns:
+            (原始DataFrame, 全量股票代码列表)
+        """
+        from datahub import Calendar
+        from datahub.loaders import load_raw_market_data
+        
+        # 获取最新交易日期
+        calendar = Calendar()
+        today = pd.Timestamp.now().strftime("%Y%m%d")
+        latest_trade_date = calendar.get_latest_trade_date(today)
+        
+        if not latest_trade_date:
+            latest_trade_date = today
+            logger.warning(f"⚠️ 无法获取最新交易日，使用今天：{today}")
+        else:
+            logger.info(f"📅 最新交易日期：{latest_trade_date}")
+        
+        # 计算数据起始日期（使用全局 observation_days 配置）
+        observation_days = self.settings.observation_days
+        logger.info(f"📊 配置观察期：{observation_days}个交易日")
+        start_date = get_data_start_date(latest_trade_date, observation_days=observation_days)
+        logger.info(f"📅 计算的数据范围：{start_date} ~ {latest_trade_date}（观察期：{observation_days}个交易日）")
+        
+        # 使用 datahub 的统一函数加载原始数据
+        df = load_raw_market_data(
+            start_date=start_date,
+            end_date=latest_trade_date,
+            exclude_st=False,
+            min_list_days=0,
+        )
+        
+        # 获取全量股票代码
+        stock_codes = df.index.get_level_values('ts_code').unique().tolist()
+        logger.info(f"📊 全量股票池：{len(stock_codes)} 只股票")
+        
+        return df, stock_codes
+    
     def load_market_data(self) -> tuple[pd.DataFrame, list[str]]:
         """加载市场数据并执行股票池过滤.
         
@@ -65,24 +105,33 @@ class DataLoader:
         # 执行股票池过滤
         stock_codes, df_pool = self._filter_stock_pool(basic_df, latest_trade_date)
         
-        # 加载价格数据
-        df = self._load_price_data(start_date, latest_trade_date, stock_codes)
+        # 加载价格数据用于过滤
+        logger.info(f"💰 开始加载价格数据用于过滤...")
+        df_price = self._load_price_data(start_date, latest_trade_date, stock_codes)
         
-        # 应用价格和成交量过滤
-        df = self._apply_price_filters(df, stock_codes)
+        # 应用价格、成交量、成交额、换手率过滤
+        logger.info(f"💰 应用价格和流动性过滤...")
+        df_price = self._apply_price_filters(df_price, stock_codes)
         
-        # 更新股票代码列表
-        if "ts_code" in df.columns:
-            stock_codes = df["ts_code"].dropna().unique().tolist()
-            logger.info(f"📊 价格数据过滤后股票池：{len(stock_codes)} 只股票")
+        # 更新 stock_codes
+        if not df_price.empty and "ts_code" in df_price.columns:
+            stock_codes = df_price["ts_code"].dropna().unique().tolist()
+            logger.info(f"📊 价格/流动性过滤后：{len(stock_codes)} 只股票")
         
-        # 应用完整性过滤
+        # 应用市值过滤
+        logger.info(f"💰 应用市值过滤...")
         pool_filter = StockPoolFilter(self.settings.stock_pool)
-        stock_codes = pool_filter.filter_by_completeness(df, stock_codes)
+        stock_codes = pool_filter._filter_market_value(df_price, stock_codes)
+        logger.info(f"📊 市值过滤后：{len(stock_codes)} 只股票")
+        
+        # 应用数据完整性过滤
+        logger.info(f"🔍 应用数据完整性过滤...")
+        stock_codes = pool_filter.filter_by_completeness(df_price, stock_codes)
         logger.info(f"📊 完整性过滤后最终股票池：{len(stock_codes)} 只股票")
         
-        # 过滤到最终的 stock_codes
-        df = df[df["ts_code"].isin(stock_codes)].copy()
+        # 重新加载最终股票池的完整价格数据
+        logger.info(f"💰 加载最终股票池的完整数据...")
+        df = self._load_price_data(start_date, latest_trade_date, stock_codes)
         
         # 补充行业信息
         df = self._add_industry_info(df, basic_df)
@@ -112,7 +161,7 @@ class DataLoader:
                    f"min_amount={self.settings.stock_pool.min_amount}, "
                    f"min_turnover={self.settings.stock_pool.min_turnover}")
         
-        # 执行基础过滤（ST、停牌、上市天数）
+        # 执行基础过滤（ST、停牌、上市天数、行业）
         stock_codes, df_pool = pool_filter.filter_stock_pool(
             basic_df=basic_df,
             price_df=None,
@@ -171,6 +220,26 @@ class DataLoader:
         logger.info(f"   匹配行业：{', '.join(matched_industries[:10])}{'...' if len(matched_industries) > 10 else ''}")
         
         return filtered_df
+    
+    def _load_basic_info(self) -> pd.DataFrame:
+        """加载股票基本信息.
+        
+        Returns:
+            股票基本信息 DataFrame
+        """
+        from datahub import Stock
+        
+        cache_root = self.settings.data.cache_root
+        if not cache_root.is_absolute():
+            project_root = Path(__file__).resolve().parent.parent.parent
+            cache_root = project_root / cache_root
+        
+        stock = Stock(root=str(cache_root))
+        basic_df = stock.universe()
+        if basic_df is None or basic_df.empty:
+            raise ValueError("无法获取股票基本信息")
+        
+        return basic_df
     
     def _load_price_data(
         self, 

@@ -22,16 +22,37 @@ logger = get_logger(__name__)
 def main():
     """主函数 - 使用 ScreenerOrchestrator"""
     
-    # 创建编排器
-    orchestrator = ScreenerOrchestrator()
+    # 创建编排器（screener 不需要 backtest 配置）
+    settings = get_settings(reload=True, config_files=["screening.yaml", "stock_pool.yaml"])
+    orchestrator = ScreenerOrchestrator(settings=settings)
     
     # 初始化系统
     if not orchestrator.initialize():
         logger.error("系统初始化失败")
         return
     
+    # 执行股票池过滤（独立服务模块，只执行一次）
+    logger.info("\n" + "=" * 60)
+    logger.info("执行股票池过滤")
+    logger.info("=" * 60)
+    from src.agent.services.stock_pool_service import StockPoolService
+    stock_pool_service = StockPoolService(settings)
+    filtered_data, filtered_codes = stock_pool_service.apply_filter(
+        orchestrator.data, 
+        orchestrator.stock_codes
+    )
+    logger.info(f"✅ 股票池过滤完成：{len(filtered_codes)} 只股票")
+    
+    # 更新 Orchestrator 的数据并重新创建工具
+    orchestrator.data = filtered_data
+    orchestrator.stock_codes = filtered_codes
+    orchestrator.component_initializer.create_bridge_tools(
+        data_fn=lambda: orchestrator.data,
+        stock_codes=orchestrator.stock_codes
+    )
+    orchestrator.component_initializer.create_tool_provider()
+    
     # 执行查询
-    settings = get_settings()
     queries = []
     for strategy_name, strategy_config in settings.strategies.items():
         if strategy_config.query:

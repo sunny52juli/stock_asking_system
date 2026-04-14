@@ -1,9 +1,10 @@
 """统一配置管理 - 多层配置架构.
 
 配置加载顺序（后者覆盖前者）:
-1. setting/settings.yaml - 项目配置
-2. setting/settings_advanced.yaml - 高级配置
-3. 环境变量 ${VAR:-default} (.env 文件)
+1. setting/screening.yaml - 策略配置和高级配置
+2. setting/stock_pool.yaml - 股票池配置
+3. setting/backtest.yaml - 回测配置
+4. 环境变量 ${VAR:-default} (.env 文件)
 """
 
 from __future__ import annotations
@@ -66,6 +67,8 @@ class StockPoolConfig(BaseModel):
     min_vol: float = Field(default=0.0, ge=0.0)  # 0表示不过滤
     min_amount: float = Field(default=0.0, ge=0.0)  # 最小成交金额，0表示不过滤
     min_turnover: float = Field(default=0.0, ge=0.0)  # 最小换手率，0表示不过滤
+    min_total_mv: float = Field(default=0.0, ge=0.0)  # 最小总市值（万元），0表示不过滤
+    max_total_mv: float = Field(default=999999999, gt=0)  # 最大总市值（万元），极大值表示不过滤
 
 
 class OutputConfig(BaseModel):
@@ -187,16 +190,19 @@ def _expand_env_vars(obj: Any) -> Any:
     return obj
 
 
-def load_settings(project_root: Path | None = None) -> Settings:
+def load_settings(project_root: Path | None = None, config_files: list[str] | None = None) -> Settings:
     """加载配置（多层合并）.
     
     加载顺序:
-    1. setting/settings.yaml - 项目配置
-    2. setting/settings_advanced.yaml - 高级配置
-    3. 环境变量 ${VAR:-default} (.env 文件)
+    1. setting/screening.yaml - 策略配置和高级配置
+    2. setting/stock_pool.yaml - 股票池配置
+    3. setting/backtest.yaml - 回测配置
+    4. 环境变量 ${VAR:-default} (.env 文件)
     
     Args:
         project_root: 项目根目录
+        config_files: 指定要加载的配置文件列表（相对于 setting/ 目录），
+                     为 None 时加载所有配置文件
         
     Returns:
         Settings实例
@@ -204,13 +210,20 @@ def load_settings(project_root: Path | None = None) -> Settings:
     if project_root is None:
         project_root = Path.cwd()
     
-    # 配置路径
-    project_config = project_root / "setting" / "settings.yaml"
-    advanced_config = project_root / "setting" / "settings_advanced.yaml"
+    # 默认加载所有配置文件
+    if config_files is None:
+        config_files = [
+            "screening.yaml",
+            "stock_pool.yaml",
+            "backtest.yaml",
+        ]
+    
+    # 构建完整路径
+    config_paths = [project_root / "setting" / f for f in config_files]
     
     # 按顺序加载并合并
     config_dict = {}
-    for config_path in [project_config, advanced_config]:
+    for config_path in config_paths:
         loaded = _load_yaml_file(config_path)
         if loaded:
             # 深度合并（注意：需要接收返回值）
@@ -238,16 +251,17 @@ def _deep_merge(base: dict, override: dict) -> dict:
 _settings_cache: Settings | None = None
 
 
-def get_settings(reload: bool = False) -> Settings:
+def get_settings(reload: bool = False, config_files: list[str] | None = None) -> Settings:
     """获取全局设置（单例模式）.
     
     Args:
         reload: 是否重新加载配置
+        config_files: 指定要加载的配置文件列表，为 None 时加载所有
         
     Returns:
         Settings实例
     """
     global _settings_cache
     if _settings_cache is None or reload:
-        _settings_cache = load_settings()
+        _settings_cache = load_settings(config_files=config_files)
     return _settings_cache

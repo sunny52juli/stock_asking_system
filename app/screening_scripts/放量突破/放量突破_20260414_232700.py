@@ -19,13 +19,11 @@
     4. ma5: 通过工具 'rolling_mean' 计算，参数={'column': 'close', 'window': 5}
     5. ma10: 通过工具 'rolling_mean' 计算，参数={'column': 'close', 'window': 10}
     6. ma20: 通过工具 'rolling_mean' 计算，参数={'column': 'close', 'window': 20}
-    7. high_20: 通过工具 'rolling_max' 计算，参数={'column': 'high', 'window': 20}
-    8. low_20: 通过工具 'rolling_min' 计算，参数={'column': 'low', 'window': 20}
 
-筛选表达式: (vol > vol_ma20 * 1.5) & (pct_1d > 0.03) & (close > ma5) & (close > ma10) & (close > ma20) & (close >= high_20 * 0.95)
-置信度公式: rank_normalize(vol / vol_ma20) * 0.4 + rank_normalize(pct_1d) * 0.3 + rank_normalize((close - ma20) / ma20) * 0.3
+筛选表达式: (vol > vol_ma20 * 1.5) & (pct_1d > 0.03) & (close > ma5) & (ma5 > ma10) & (ma10 > ma20)
+置信度公式: rank_normalize(vol / vol_ma20) * 0.4 + rank_normalize(pct_1d) * 0.4 + rank_normalize((ma5 - ma20) / ma20) * 0.2
 
-生成时间: 2026-04-14 00:26:58
+生成时间: 2026-04-14 23:27:00
 """
 
 import sys
@@ -50,7 +48,6 @@ if project_root not in sys.path:
 # ==================== 筛选逻辑定义 ====================
 SCREENING_LOGIC = {
     "name": "放量突破策略",
-    "description": "筛选成交量明显放大、涨幅超过3%且技术形态良好的股票",
     "tools": [
         {
             "tool": "rolling_mean",
@@ -99,27 +96,10 @@ SCREENING_LOGIC = {
                 "window": 20
             },
             "var": "ma20"
-        },
-        {
-            "tool": "rolling_max",
-            "params": {
-                "column": "high",
-                "window": 20
-            },
-            "var": "high_20"
-        },
-        {
-            "tool": "rolling_min",
-            "params": {
-                "column": "low",
-                "window": 20
-            },
-            "var": "low_20"
         }
     ],
-    "expression": "(vol > vol_ma20 * 1.5) & (pct_1d > 0.03) & (close > ma5) & (close > ma10) & (close > ma20) & (close >= high_20 * 0.95)",
-    "confidence_formula": "rank_normalize(vol / vol_ma20) * 0.4 + rank_normalize(pct_1d) * 0.3 + rank_normalize((close - ma20) / ma20) * 0.3",
-    "explanation": "1. 成交量较20日均量放大1.5倍以上\n2. 当日涨幅超过3%\n3. 收盘价站上5日、10日、20日均线\n4. 收盘价接近20日最高价（达到95%以上），显示强势突破形态"
+    "expression": "(vol > vol_ma20 * 1.5) & (pct_1d > 0.03) & (close > ma5) & (ma5 > ma10) & (ma10 > ma20)",
+    "confidence_formula": "rank_normalize(vol / vol_ma20) * 0.4 + rank_normalize(pct_1d) * 0.4 + rank_normalize((ma5 - ma20) / ma20) * 0.2"
 }
 # ==================== 筛选逻辑定义结束 ====================
 

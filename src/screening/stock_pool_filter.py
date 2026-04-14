@@ -78,6 +78,14 @@ class StockPoolFilter:
             if "ts_code" in price_df.columns:
                 stock_codes = price_df["ts_code"].dropna().unique().tolist()
         
+        # 6. 市值过滤（需要估值数据）
+        if price_df is not None and not price_df.empty:
+            stock_codes = self._filter_market_value(price_df, stock_codes)
+        
+        # 7. 数据完整性过滤
+        if price_df is not None and not price_df.empty:
+            stock_codes = self.filter_by_completeness(price_df, stock_codes)
+        
         return stock_codes, df_pool
     
     def _filter_st(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -123,11 +131,18 @@ class StockPoolFilter:
         return df
     
     def _filter_industry(self, df: pd.DataFrame) -> pd.DataFrame:
-        """行业过滤（暂不实现，由 orchestrator 中的 IndustryMatcher 处理）."""
-        # 行业过滤需要在 orchestrator 中通过 LLM 智能匹配
-        # 这里只记录日志
-        if self.config.industry:
-            logger.info(f"🎯 行业过滤将在后续步骤中执行，配置的行业：{self.config.industry}")
+        """行业过滤（支持模糊匹配）."""
+        if not self.config.industry or "industry" not in df.columns:
+            return df
+        
+        before_count = len(df)
+        mask = pd.Series(False, index=df.index)
+        for industry_keyword in self.config.industry:
+            mask |= df["industry"].astype(str).str.contains(industry_keyword, na=False)
+        df = df[mask]
+        removed = before_count - len(df)
+        if removed > 0:
+            logger.info(f"   ✅ 行业过滤({self.config.industry})：-{removed} 只，剩余 {len(df)} 只")
         return df
     
     def _filter_price_data(
@@ -218,6 +233,60 @@ class StockPoolFilter:
             logger.info(f"📊 价格数据过滤后：{before_stock_count} -> {after_stock_count} 只股票，{before_count} -> {after_count} 条记录")
         
         return df
+    
+    def _filter_market_value(
+        self,
+        price_df: pd.DataFrame,
+        stock_codes: list[str],
+    ) -> list[str]:
+        """按市值过滤股票.
+        
+        Args:
+            price_df: 价格数据 DataFrame（需包含 total_mv 字段）
+            stock_codes: 待检查的股票代码列表
+            
+        Returns:
+            符合市值要求的股票代码列表
+        """
+        if not stock_codes:
+            return stock_codes
+        
+        # 检查是否有市值字段
+        if "total_mv" not in price_df.columns:
+            logger.warning("⚠️ 价格数据中缺少 total_mv 字段，跳过市值过滤")
+            return stock_codes
+        
+        # 获取最新一天的市值数据
+        latest_date = price_df["trade_date"].max()
+        latest_data = price_df[
+            (price_df["trade_date"] == latest_date) & 
+            (price_df["ts_code"].isin(stock_codes))
+        ]
+        
+        if latest_data.empty:
+            return stock_codes
+        
+        filtered_stocks = set(stock_codes)
+        
+        # 最小市值过滤
+        if self.config.min_total_mv > 0:
+            before = len(filtered_stocks)
+            valid_stocks = latest_data[latest_data["total_mv"] >= self.config.min_total_mv]["ts_code"].unique()
+            filtered_stocks = filtered_stocks & set(valid_stocks)
+            removed = before - len(filtered_stocks)
+            if removed > 0:
+                logger.info(f"   ✅ 最小市值过滤(>={self.config.min_total_mv/1e4:.0f}亿)：-{removed} 只，剩余 {len(filtered_stocks)} 只")
+        
+        # 最大市值过滤
+        if self.config.max_total_mv < 999999999:
+            before = len(filtered_stocks)
+            valid_stocks = latest_data[latest_data["total_mv"] <= self.config.max_total_mv]["ts_code"].unique()
+            filtered_stocks = filtered_stocks & set(valid_stocks)
+            removed = before - len(filtered_stocks)
+            if removed > 0:
+                logger.info(f"   ✅ 最大市值过滤(<={self.config.max_total_mv/1e4:.0f}亿)：-{removed} 只，剩余 {len(filtered_stocks)} 只")
+        
+        return list(filtered_stocks)
     
     def filter_by_completeness(
         self,

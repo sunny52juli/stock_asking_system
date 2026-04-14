@@ -35,28 +35,29 @@ DatasetRegistry.register(
             merge_on=["ts_code"],
             optional=True,
         ),
-        # Step 3: 每日指标合并
+        # Step 3: 每日指标合并 (daily_basic)
         FetchStep(
             api_name="daily_basic",
             param_mapping={"trade_date": "date"},
             fields=[
                 "ts_code",
                 "trade_date",
-                "turnover_rate",
-                "turnover_rate_f",
-                "vol_ratio",
-                "pe",
-                "pe_ttm",
-                "pb",
-                "ps",
-                "ps_ttm",
-                "dv_ratio",
-                "dv_ttm",
-                "total_share",
-                "float_share",
-                "free_share",
-                "total_mv",
-                "circ_mv",
+                "close",              # 收盘价
+                "turnover_rate",      # 换手率(%)
+                "turnover_rate_f",    # 换手率(自由流通股)(%)
+                "volume_ratio",       # 量比
+                "pe",                 # 市盈率
+                "pe_ttm",             # 市盈率(TTM)
+                "pb",                 # 市净率
+                "ps",                 # 市销率
+                "ps_ttm",             # 市销率(TTM)
+                "dv_ratio",           # 股息率(%)
+                "dv_ttm",             # 股息率(TTM)(%)
+                "total_share",        # 总股本(万股)
+                "float_share",        # 流通股本(万股)
+                "free_share",         # 自由流通股本(万股)
+                "total_mv",           # 总市值(万元)
+                "circ_mv",            # 流通市值(万元)
             ],
             merge_on=["ts_code", "trade_date"],
             optional=True,
@@ -181,7 +182,7 @@ DatasetRegistry.register(
         date_column="trade_date",
         code_column="ts_code",
         partition_key_template="{date}",
-        description="股票估值指标（PE/PB/PS/股息率）",
+        description="股票估值指标（PE/PB/PS/股息率/量比/换手率/市值）",
     ),
     pipeline=[
         FetchStep(
@@ -190,15 +191,19 @@ DatasetRegistry.register(
             fields=[
                 "ts_code",
                 "trade_date",
-                "pe",
-                "pe_ttm",
-                "pb",
-                "ps",
-                "ps_ttm",
-                "dv_ratio",
-                "dv_ttm",
-                "total_mv",
-                "circ_mv",
+                "close",              # 收盘价
+                "turnover_rate",      # 换手率(%)
+                "turnover_rate_f",    # 换手率(自由流通股)(%)
+                "volume_ratio",       # 量比
+                "pe",                 # 市盈率
+                "pe_ttm",             # 市盈率(TTM)
+                "pb",                 # 市净率
+                "ps",                 # 市销率
+                "ps_ttm",             # 市销率(TTM)
+                "dv_ratio",           # 股息率(%)
+                "dv_ttm",             # 股息率(TTM)(%)
+                "total_mv",           # 总市值(万元)
+                "circ_mv",            # 流通市值(万元)
             ],
             merge_on=[],
         ),

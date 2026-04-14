@@ -207,7 +207,7 @@ def _create_deep_agent_mode(
     # Create checkpointer (required for memory)
     checkpointer = MemorySaver()
 
-    # Create the deep agent with recursion limit
+    # Create the deep agent
     agent = create_deep_agent(
         model=llm,
         tools=tools,
@@ -216,10 +216,9 @@ def _create_deep_agent_mode(
         skills=["/skills/"],
         memory=["/AGENTS.md"],
         checkpointer=checkpointer,
-        recursion_limit=max_iterations * 2,  # LangGraph uses pairs of steps (plan + execute)
     )
 
-    logger.info("Deep thinking agent created successfully with recursion_limit=%d", max_iterations * 2)
+    logger.info("Deep thinking agent created successfully")
     return agent, initial_files
 
 

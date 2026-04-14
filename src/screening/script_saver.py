@@ -70,6 +70,10 @@ class ScriptSaver:
         )
         save_result = json.loads(save_result_json)
         if save_result.get("status") == "success":
-            logger.info(f"\n💾 策略脚本已保存：{save_result.get('filename', 'unknown')}")
+            script_path = save_result.get('script_path', '') or save_result.get('filename', '')
+            if script_path:
+                logger.info(f"\n💾 策略脚本已保存：{script_path}")
+            else:
+                logger.info(f"\n💾 策略脚本已保存")
         else:
             logger.warning(f"⚠️ 脚本保存失败：{save_result.get('error', '未知错误')}")

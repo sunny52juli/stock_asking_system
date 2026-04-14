@@ -341,5 +341,72 @@ class TestDataLoaderModule:
         assert result == ['银行', '证券']
 
 
+
+class TestTushareFieldMapping:
+    """测试 Tushare 字段映射配置。"""
+    
+    def test_volume_ratio_field_name(self):
+        """测试量比字段名正确性（应为 volume_ratio 而非 vol_ratio）。"""
+        from datahub.data_fields import FIELD_MAPPING, FIELD_DESCRIPTIONS
+        
+        # 验证中文到英文的映射
+        assert FIELD_MAPPING['量比'] == 'volume_ratio'
+        
+        # 验证字段描述存在
+        assert 'volume_ratio' in FIELD_DESCRIPTIONS
+        assert FIELD_DESCRIPTIONS['volume_ratio'] == '量比'
+    
+    def test_daily_basic_fields_completeness(self):
+        """测试 daily_basic 接口字段完整性。"""
+        from datahub.data_fields import FIELD_MAPPING
+        
+        # 验证所有估值指标字段都存在
+        required_fields = [
+            'turnover_rate', 'turnover_rate_f', 'volume_ratio',
+            'pe', 'pe_ttm', 'pb', 'ps', 'ps_ttm',
+            'dv_ratio', 'dv_ttm',
+            'total_share', 'float_share', 'free_share',
+            'total_mv', 'circ_mv'
+        ]
+        
+        # 检查这些字段是否在映射中（通过中文名或英文名）
+        field_values = set(FIELD_MAPPING.values())
+        for field in required_fields:
+            assert field in field_values, f"字段 {field} 缺失"
+    
+    def test_field_mapping_consistency(self):
+        """测试字段映射一致性（registry 和 data_fields 应该一致）。"""
+        from datahub.data_fields import FIELD_MAPPING
+        
+        # 重新导入 registry 模块以确保注册（避免被其他测试的 mock 影响）
+        import importlib
+        import datahub.registry.stock
+        importlib.reload(datahub.registry.stock)
+        
+        from datahub.registry.stock import DatasetRegistry
+        from datahub.core.dataset import Dataset
+        
+        # 获取 STOCK_DAILY 的 daily_basic 步骤配置
+        result = DatasetRegistry.get(Dataset.STOCK_DAILY)
+        # DatasetRegistry.get 返回 (meta, pipeline) 元组
+        if isinstance(result, tuple):
+            meta, pipeline = result
+        else:
+            pipeline = result.pipeline if hasattr(result, 'pipeline') else []
+        
+        daily_basic_step = None
+        for step in pipeline:
+            if step.api_name == 'daily_basic':
+                daily_basic_step = step
+                break
+        
+        assert daily_basic_step is not None, "daily_basic 步骤不存在"
+        
+        # 验证关键字段都在配置中
+        expected_fields = ['volume_ratio', 'turnover_rate', 'pe', 'pb', 'total_mv']
+        for field in expected_fields:
+            assert field in daily_basic_step.fields, f"字段 {field} 不在 daily_basic 配置中"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

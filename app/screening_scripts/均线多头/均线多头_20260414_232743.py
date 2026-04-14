@@ -1,26 +1,25 @@
 ﻿#!/usr/bin/env python3
 """
-筛选逻辑脚本: 放量突破优化版
+筛选逻辑脚本: 均线多头排列
 (由 core.agent 生成, 仅依赖 core)
 
-原始查询: 找出最近放量突破的股票：
-1. 成交量较前期放大（至少 1.5 倍）
-2. 涨幅>3%
-3. 技术形态良好
+原始查询: 找出均线多头排列的股票：
+1. 5日>10日>20日均线
+2. 股价站上所有均线
 
 
 筛选说明:
     无说明
 
 工具步骤:
-    1. vol_ma5: 通过工具 'rolling_mean' 计算，参数={'column': 'vol', 'window': 5}
-    2. ma5: 通过工具 'rolling_mean' 计算，参数={'column': 'close', 'window': 5}
-    3. pct_1d: 通过工具 'pct_change' 计算，参数={'column': 'close', 'periods': 1}
+    1. ma5: 通过工具 'rolling_mean' 计算，参数={'column': 'close', 'window': 5}
+    2. ma10: 通过工具 'rolling_mean' 计算，参数={'column': 'close', 'window': 10}
+    3. ma20: 通过工具 'rolling_mean' 计算，参数={'column': 'close', 'window': 20}
 
-筛选表达式: (vol > vol_ma5 * 1.2) & (pct_1d > 0.02) & (close > ma5)
-置信度公式: rank_normalize(vol / vol_ma5) * 0.5 + rank_normalize(pct_1d) * 0.3 + rank_normalize(close / ma5) * 0.2
+筛选表达式: (ma5 > ma10) & (ma10 > ma20) & (close > ma5) & (close > ma10) & (close > ma20)
+置信度公式: rank_normalize((ma5 - ma20) / ma20)
 
-生成时间: 2026-04-13 23:50:07
+生成时间: 2026-04-14 23:27:43
 """
 
 import sys
@@ -44,16 +43,8 @@ if project_root not in sys.path:
 
 # ==================== 筛选逻辑定义 ====================
 SCREENING_LOGIC = {
-    "name": "放量突破优化版",
+    "name": "均线多头排列",
     "tools": [
-        {
-            "tool": "rolling_mean",
-            "params": {
-                "column": "vol",
-                "window": 5
-            },
-            "var": "vol_ma5"
-        },
         {
             "tool": "rolling_mean",
             "params": {
@@ -63,24 +54,30 @@ SCREENING_LOGIC = {
             "var": "ma5"
         },
         {
-            "tool": "pct_change",
+            "tool": "rolling_mean",
             "params": {
                 "column": "close",
-                "periods": 1
+                "window": 10
             },
-            "var": "pct_1d"
+            "var": "ma10"
+        },
+        {
+            "tool": "rolling_mean",
+            "params": {
+                "column": "close",
+                "window": 20
+            },
+            "var": "ma20"
         }
     ],
-    "expression": "(vol > vol_ma5 * 1.2) & (pct_1d > 0.02) & (close > ma5)",
-    "confidence_formula": "rank_normalize(vol / vol_ma5) * 0.5 + rank_normalize(pct_1d) * 0.3 + rank_normalize(close / ma5) * 0.2",
-    "description": "筛选放量突破股票：成交量放大1.2倍以上，涨幅>2%，收盘价突破5日均线"
+    "expression": "(ma5 > ma10) & (ma10 > ma20) & (close > ma5) & (close > ma10) & (close > ma20)",
+    "confidence_formula": "rank_normalize((ma5 - ma20) / ma20)"
 }
 # ==================== 筛选逻辑定义结束 ====================
 
-ORIGINAL_QUERY = """找出最近放量突破的股票：
-1. 成交量较前期放大（至少 1.5 倍）
-2. 涨幅>3%
-3. 技术形态良好
+ORIGINAL_QUERY = """找出均线多头排列的股票：
+1. 5日>10日>20日均线
+2. 股价站上所有均线
 """
 
 
@@ -110,7 +107,7 @@ def main():
 
     logic_name = SCREENING_LOGIC.get("name", "未命名筛选")
     
-    parser = argparse.ArgumentParser(description=f'放量突破优化版 - 筛选脚本')
+    parser = argparse.ArgumentParser(description=f'均线多头排列 - 筛选脚本')
     parser.add_argument('--top_n', type=int, default=20, help='返回股票数量（默认 20）')
     parser.add_argument('--output', type=str, default=None, help='输出文件路径（可选）')
     args = parser.parse_args()

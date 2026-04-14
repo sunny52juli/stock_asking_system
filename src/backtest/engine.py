@@ -13,7 +13,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from datahub.loaders import StockDataLoader
+from datahub.loaders import load_raw_market_data
 from src.screening.executor import ScreeningExecutor
 from infrastructure.logging.logger import get_logger
 
@@ -50,14 +50,14 @@ class BacktestEngine:
         self.data: Optional[pd.DataFrame] = None
         self.results: list[dict[str, Any]] = []
     
-    def load_data(self) -> bool:
-        """加载回测所需的市场数据.
+    def load_raw_data(self) -> bool:
+        """加载回测所需的原始市场数据（不过滤）.
         
         Returns:
             True if successful
         """
         try:
-            logger.info(f"📊 加载回测数据（筛选日期：{self.screening_date}）")
+            logger.info(f"📊 加载回测原始数据（筛选日期：{self.screening_date}）")
             
             # 计算日期范围（需要包含持有期未来数据）
             from datetime import datetime, timedelta
@@ -70,16 +70,12 @@ class BacktestEngine:
             start_date = start_dt.strftime("%Y%m%d")
             end_date = future_end.strftime("%Y%m%d")
             
-            # 使用 StockDataLoader 加载数据
-            loader = StockDataLoader(
-                exclude_st=True,
-                min_list_days=180,
-            )
-            
-            self.data = loader.load_market_data(
-                trade_date_for_pool=self.screening_date,
+            # 使用 datahub 的统一函数加载原始数据
+            self.data = load_raw_market_data(
                 start_date=start_date,
                 end_date=end_date,
+                exclude_st=False,
+                min_list_days=0,
             )
             
             # 验证数据实际覆盖的日期范围
@@ -381,8 +377,8 @@ def run_backtest(
         observation_days=observation_days,
     )
     
-    # 加载数据
-    if not engine.load_data():
+    # 加载原始数据
+    if not engine.load_raw_data():
         raise RuntimeError("数据加载失败")
     
     # 执行策略

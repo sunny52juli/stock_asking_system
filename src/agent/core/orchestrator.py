@@ -26,8 +26,8 @@ logger = get_logger(__name__)
 class ScreenerOrchestrator(LoggerMixin):
     """筛选器编排器 - 负责高层协调和组件管理."""
     
-    def __init__(self):
-        self.settings = get_settings()
+    def __init__(self, settings=None):
+        self.settings = settings or get_settings()
         
         # 使用项目根目录（相对于此文件的位置）
         # orchestrator.py -> core/ -> agent/ -> src/ -> 项目根目录
@@ -73,11 +73,11 @@ class ScreenerOrchestrator(LoggerMixin):
             return False
         
         try:
-            # 1. 加载市场数据
+            # 1. 加载原始市场数据（不过滤）
             logger.info("\n" + "=" * 60)
             logger.info("步骤 1/3: 加载市场数据")
             logger.info("=" * 60)
-            self.data, self.stock_codes = self.data_loader.load_market_data()
+            self.data, self.stock_codes = self.data_loader.load_raw_market_data()
             
             # 2. 初始化所有组件
             logger.info("\n" + "=" * 60)
@@ -85,7 +85,7 @@ class ScreenerOrchestrator(LoggerMixin):
             logger.info("=" * 60)
             components = self.component_initializer.initialize_all()
             
-            # 3. 创建 Bridge 工具和 Tool Provider
+            # 3. 创建 Bridge 工具和 Tool Provider（暂时使用全量数据）
             logger.info("\n" + "=" * 60)
             logger.info("步骤 3/3: 创建工具层")
             logger.info("=" * 60)

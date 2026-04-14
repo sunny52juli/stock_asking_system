@@ -98,6 +98,16 @@ src/agent/
 │   ├── long_term.py               # 长期记忆 (SQLite)
 │   └── short_term.py              # 短期记忆
 │
+├── models/                         # 数据模型
+│   └── screening_logic.py         # 筛选逻辑模型
+│
+├── security/                       # 安全管理
+│   ├── __init__.py
+│   └── ...                        # 安全检查相关
+│
+├── services/                       # 服务层
+│   └── stock_pool_service.py      # 股票池服务
+│
 ├── generators/                     # 代码生成器
 │   ├── __init__.py
 │   └── screening_script_generator.py  # 筛选脚本生成器
@@ -184,7 +194,7 @@ result = orchestrator.run_query("帮我找放量突破的股票")
 | `1` | 警告 | 继续执行，记录警告 |
 | `2` | 阻止 | 终止执行，错误信息返回给 Agent |
 
-**配置示例**（`settings.yaml`）：
+**配置示例**（`screening.yaml`）：
 
 ```yaml
 harness:
@@ -588,7 +598,7 @@ if __name__ == "__main__":
 
 ## ⚙️ 配置说明
 
-Agent 的配置在 `setting/settings.yaml` 中：
+Agent 的配置分布在 `setting/` 目录下的多个配置文件中：
 
 ```yaml
 # LLM 配置
@@ -668,7 +678,7 @@ if __name__ == "__main__":
     sys.exit(exit_code)
 ```
 
-2. 在 `settings.yaml` 中配置：
+2. 在 `screening.yaml` 中配置：
 
 ```yaml
 harness:

@@ -40,7 +40,7 @@ MCP (Model Context Protocol) Server 基于 FastMCP 框架构建,为 Agent 提供
 
 ```
 mcp_server/
-├── __init__.py                     
+├── __init__.py                     # 包入口
 ├── __main__.py                     # CLI 入口
 ├── server.py                       # 服务器主程序
 ├── auto_register.py                # 自动注册装饰器
@@ -48,10 +48,11 @@ mcp_server/
 ├── pyproject.toml                  # MCP 项目配置
 │
 └── executors/                      # 工具执行器
-    ├── __init__.py                 
-    ├── data_tools.py               # 数据查询工具
-    ├── indicator_tools.py          # 指标计算工具
-    └── strategy_tools.py           # 策略执行工具
+    ├── __init__.py                 # 模块入口
+    ├── math_tools.py               # 数学工具
+    ├── other_tools.py              # 其他工具
+    ├── technical_tools.py          # 技术指标工具
+    └── time_series_tools.py       # 时间序列工具
 ```
 
 ## 🔧 核心组件

@@ -50,7 +50,10 @@ def execute_query_with_reflection(
                     "messages": [{"role": "user", "content": current_query}],
                     "files": initial_files,
                 },
-                config={"configurable": {"thread_id": thread_id}},
+                config={
+                    "configurable": {"thread_id": thread_id},
+                    "recursion_limit": max_iterations * 2,  # LangGraph uses pairs of steps (plan + execute)
+                },
             )
         except Exception as e:
             logger.error(f"Execution failed: {e}")

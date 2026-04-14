@@ -256,6 +256,7 @@ class ScreeningQualityEvaluator:
             issues.append("筛选结果为空，未找到符合条件的股票")
             suggestions.append("放宽筛选条件（如降低涨幅阈值、扩大行业范围）")
             suggestions.append("检查筛选逻辑是否有误")
+            suggestions.append("考虑减少技术指标的约束条件")
             return 0.0, issues, suggestions
 
         # 候选数量控制由 Agent 根据 reflection.md 规则自行判断

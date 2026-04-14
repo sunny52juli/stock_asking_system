@@ -143,18 +143,11 @@ class QueryExecutor:
         
         start_time = time.time()
         
-        # 快速模式下，根据查询动态创建 Agent（智能选择工具）
-        if not settings.harness.deep_thinking and not self.agent:
-            from src.agent.core.agent_factory import create_screener_agent
-            self.agent, self.initial_files = create_screener_agent(
-                llm=self.agent.llm if hasattr(self.agent, 'llm') else None,
-                tool_provider=self.agent.tool_provider if hasattr(self.agent, 'tool_provider') else None,
-                skill_registry=self.agent.skill_registry if hasattr(self.agent, 'skill_registry') else None,
-                long_term_memory=self.agent.long_term_memory if hasattr(self.agent, 'long_term_memory') else None,
-                skills_dir=None,
-                deep_thinking=settings.harness.deep_thinking,
-                max_iterations=settings.harness.max_iterations,
-            )
+        # 注意：Agent 应该在 orchestrator.execute_query() 中已经创建
+        # 这里直接使用 self.agent，不应该再次创建
+        if not self.agent:
+            logger.error("❌ Agent 未初始化！这不应该发生，请检查 orchestrator 的初始化逻辑")
+            return None
         
         # 直接调用 Agent
         result = self.agent.invoke(
@@ -164,7 +157,7 @@ class QueryExecutor:
             },
             config={
                 "configurable": {"thread_id": thread_id},
-                "recursion_limit": settings.harness.max_iterations * 2,  # LangGraph uses pairs of steps
+                "recursion_limit": 50,
             },
         )
         
@@ -188,10 +181,8 @@ class QueryExecutor:
             logger.warning(f"\n⚠️ 检测到质量问题，尝试自动优化...")
             logger.info(f"   问题：{', '.join(quality_result['issues'][:3])}")
             
-            # 提取并显示筛选逻辑摘要（用于排查问题）
-            screening_logic_summary = self._extract_screening_logic_summary(result)
-            if screening_logic_summary:
-                logger.info(f"   当前筛选逻辑：{screening_logic_summary}")
+            # 记录详细的失败诊断信息
+            self._log_screening_failure_details(result, quality_result)
             
             retry_result = self._retry_with_quality_feedback(
                 query, thread_id, result, quality_result, session
@@ -309,7 +300,7 @@ class QueryExecutor:
                     },
                     config={
                         "configurable": {"thread_id": f"{thread_id}-task-{task_id}"},
-                        "recursion_limit": settings.harness.max_iterations * 2,
+                        "recursion_limit": 50,
                     },
                 )
                 
@@ -409,6 +400,43 @@ class QueryExecutor:
             logger.debug(f"提取筛选逻辑摘要失败: {e}")
             return None
     
+    def _log_screening_failure_details(self, result: dict, quality_result: dict):
+        """记录筛选失败的详细信息（用于诊断）.
+        
+        Args:
+            result: Agent 执行结果
+            quality_result: 质量评估结果
+        """
+        candidate_count = quality_result.get("candidate_count", 0)
+        if candidate_count != 0:
+            return  # 只在结果为空时输出详细诊断
+        
+        logger.error(f"\n❌ 筛选失败详细诊断：")
+        
+        # 提取筛选逻辑
+        screening_logic_summary = self._extract_screening_logic_summary(result)
+        if screening_logic_summary:
+            logger.error(f"   筛选逻辑：{screening_logic_summary}")
+        else:
+            logger.error(f"   ⚠️ 未能提取筛选逻辑（Agent 可能未调用工具）")
+        
+        # 检查是否有工具调用
+        messages = result.get("messages", [])
+        has_tool_call = False
+        for message in messages:
+            if hasattr(message, "tool_calls") and message.tool_calls:
+                for tool_call in message.tool_calls:
+                    if tool_call.get("name") == "run_screening":
+                        has_tool_call = True
+                        break
+        
+        if not has_tool_call:
+            logger.error(f"   ⚠️ Agent 未调用 run_screening 工具")
+            logger.error(f"   可能原因：")
+            logger.error(f"      1. Agent 理解错了任务意图")
+            logger.error(f"      2. System prompt 不够清晰")
+            logger.error(f"      3. 工具注册有问题")
+    
     def _retry_with_quality_feedback(
         self,
         query: str,
@@ -439,6 +467,24 @@ class QueryExecutor:
             issues = quality_result.get("issues", [])
             suggestions = quality_result.get("suggestions", [])
             
+            # 根据重试次数调整优化策略
+            if retry_attempt == 1:
+                # 第一次重试：大幅放宽条件
+                optimization_strategy = """
+【优化策略】
+请大幅放宽筛选条件：
+1. 降低技术指标阈值（如成交量倍数从 1.5 降到 1.2）
+2. 减少约束条件数量（保留最核心的 2-3 个条件）
+3. 扩大行业或板块范围
+4. 降低涨幅要求（如从 3% 降到 1%）
+"""
+            else:
+                # 后续重试：继续优化
+                optimization_strategy = """
+【优化策略】
+请进一步优化筛选条件，尝试不同的技术指标组合。
+"""
+            
             optimization_prompt = f"""
 请根据以下质量问题优化之前的结果：
 
@@ -447,6 +493,8 @@ class QueryExecutor:
 
 【改进建议】
 {chr(10).join(f'- {suggestion}' for suggestion in suggestions[:5])}
+
+{optimization_strategy}
 
 请重新生成优化后的结果。
 """
@@ -464,7 +512,7 @@ class QueryExecutor:
                     },
                     config={
                         "configurable": {"thread_id": f"{thread_id}-retry-{retry_attempt}"},
-                        "recursion_limit": self.settings.harness.max_iterations * 2,
+                        "recursion_limit": 50,
                     },
                 )
                 

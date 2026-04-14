@@ -1,6 +1,7 @@
 """回测应用入口 - 执行策略回测并生成报告."""
 
 import sys
+import pandas as pd
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -39,7 +40,8 @@ def main(
     print("-" * 60)
     
     try:
-        settings = get_settings()
+        # 回测需要加载所有配置文件
+        settings = get_settings(reload=True, config_files=["backtest.yaml", "stock_pool.yaml"])
         
         # 使用传入的参数或配置的默认值
         actual_scripts_dir = scripts_dir or "screening_scripts"
@@ -52,17 +54,39 @@ def main(
         logger.info(f"持有期：{actual_holding_periods}")
         logger.info(f"观察期：{actual_observation_days} 个交易日")
         
-        # 创建回测引擎
+        # 创建回测引擎（不传入 settings）
         engine = BacktestEngine(
             screening_date=actual_screening_date,
             holding_periods=actual_holding_periods,
             observation_days=actual_observation_days,
         )
         
-        # 加载数据
-        if not engine.load_data():
+        # 加载原始数据（不过滤）
+        if not engine.load_raw_data():
             logger.error("❌ 数据加载失败")
             return
+        
+        # 执行股票池过滤（独立服务模块，与 screener 一致）
+        logger.info("\n" + "=" * 60)
+        logger.info("执行股票池过滤")
+        logger.info("=" * 60)
+        from src.agent.services.stock_pool_service import StockPoolService
+        stock_pool_service = StockPoolService(settings)
+        
+        # MultiIndex 需要提取 ts_code 列表
+        if hasattr(engine.data, 'index') and isinstance(engine.data.index, pd.MultiIndex):
+            raw_codes = engine.data.index.get_level_values('ts_code').unique().tolist()
+        else:
+            raw_codes = engine.data['ts_code'].unique().tolist()
+        
+        filtered_data, filtered_codes = stock_pool_service.apply_filter(
+            engine.data, 
+            raw_codes
+        )
+        logger.info(f"✅ 股票池过滤完成：{len(filtered_codes)} 只股票")
+        
+        # 更新引擎的过滤后数据
+        engine.data = filtered_data
         
         # 执行策略
         results = engine.run_directory(actual_scripts_dir)

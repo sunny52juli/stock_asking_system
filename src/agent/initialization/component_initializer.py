@@ -107,7 +107,7 @@ class ComponentInitializer:
                 "screener-mcp": {
                     "transport": "stdio",
                     "command": "python",
-                    "args": ["-m", "stock_asking_mcp.server"],
+                    "args": ["-m", "mcp_server.server"],
                 }
             }
             

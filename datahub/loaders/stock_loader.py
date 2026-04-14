@@ -282,3 +282,33 @@ def load_latest_market_data(recent_days: int = 60) -> pd.DataFrame:
         start_date=start_date,
         end_date=today,
     )
+
+
+def load_raw_market_data(
+    start_date: str,
+    end_date: str,
+    exclude_st: bool = False,
+    min_list_days: int = 0,
+) -> pd.DataFrame:
+    """加载原始市场数据（不进行股票池过滤）。
+    
+    用于 screener 和 backtest 的初始数据加载，后续由 StockPoolService 进行过滤。
+    
+    Args:
+        start_date: 开始日期（YYYYMMDD）
+        end_date: 结束日期（YYYYMMDD）
+        exclude_st: 是否排除 ST 股票，默认 False（加载全量数据）
+        min_list_days: 最小上市天数，默认 0（不限制）
+        
+    Returns:
+        DataFrame with MultiIndex (trade_date, ts_code)，包含行业信息
+    """
+    loader = StockDataLoader(
+        exclude_st=exclude_st,
+        min_list_days=min_list_days,
+    )
+    return loader.load_market_data(
+        trade_date_for_pool=end_date,
+        start_date=start_date,
+        end_date=end_date,
+    )
