@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-import pandas as pd
-
 from datahub.core.dataset import Dataset
 from datahub.core.query import Query
 from datahub.core.repository import Repository

@@ -119,6 +119,7 @@ def rolling_mean(data: pd.DataFrame, column: str, window: int) -> pd.Series:
 |------|------|------|
 | 数据查询 | 获取股票、基金等数据 | `get_stock_daily` |
 | 指标计算 | 计算技术指标 | `rolling_mean`, `rsi`, `macd` |
+| 指数相关性 | 与指数对比分析 | `beta`, `alpha`, `correlation_with_index` |
 | 策略执行 | 执行筛选策略 | `run_screening` |
 
 ## 💡 使用示例
@@ -146,6 +147,67 @@ def my_custom_indicator(data: pd.DataFrame, param: float) -> pd.Series:
 ```
 
 工具会自动被注册,无需手动配置。
+
+### 示例 1.5: 使用指数相关性工具
+
+新增的指数相关性工具需要数据中包含股票和指数的价格列：
+
+```python
+# 准备数据：包含股票和指数价格
+data = pd.DataFrame({
+    'close': stock_prices,        # 股票收盘价
+    'index_close': index_prices,  # 指数收盘价（如沪深300）
+})
+
+# 1. 计算 Beta（系统性风险）
+beta_values = beta(data, stock_col='close', index_col='index_close', window=60)
+# Beta > 1: 高波动性; Beta < 1: 低波动性
+
+# 2. 计算 Alpha（超额收益）
+alpha_values = alpha(data, stock_col='close', index_col='index_close', window=60)
+# Alpha > 0: 跑赢市场
+
+# 3. 计算跑赢指数天数
+outperform = outperform_rate(data, stock_col='close', index_col='index_close', window=60)
+# 过去60天中有多少天跑赢指数
+
+# 4. 计算与指数的相关系数
+corr = correlation_with_index(data, stock_col='close', index_col='index_close', window=60)
+# -1 到 1，越接近1表示与指数走势越一致
+
+# 5. 计算跟踪误差
+tracking_err = tracking_error(data, stock_col='close', index_col='index_close', window=60)
+# 越小表示跟随指数越紧密
+
+# 6. 计算信息比率
+ir = information_ratio(data, stock_col='close', index_col='index_close', window=60)
+# IR > 0.5: 良好; IR > 1.0: 优秀
+```
+
+**实际应用场景**：
+
+```python
+# 筛选低 Beta、高 Alpha 的优质股票
+screening_logic = {
+    "name": "稳健阿尔法策略",
+    "tools_definition": [
+        {"name": "beta", "params": {"window": 60}},
+        {"name": "alpha", "params": {"window": 60}},
+    ],
+    "expression": "(beta < 1.0) & (alpha > 0)",
+    "confidence": "rank_normalize(alpha) * 0.7 + rank_normalize(1/beta) * 0.3"
+}
+
+# 筛选高信息比率的股票
+screening_logic = {
+    "name": "高信息比率策略",
+    "tools_definition": [
+        {"name": "information_ratio", "params": {"window": 60}},
+    ],
+    "expression": "information_ratio > 0.5",
+    "confidence": "rank_normalize(information_ratio)"
+}
+```
 
 ### 示例 2:从 Agent 调用 MCP 工具
 
@@ -270,7 +332,8 @@ tool_registry.register(
 
 ## 📝 更新日志
 
-- **2024-01**: 初始版本,实现基础 MCP 服务
-- **2024-02**: 添加自动注册机制
-- **2024-03**: 支持 SSE 传输协议
+- **2026-04**: 新增指数相关性工具（beta, alpha, tracking_error等）
 - **2024-04**: 完善工具分类和文档
+- **2024-03**: 支持 SSE 传输协议
+- **2024-02**: 添加自动注册机制
+- **2024-01**: 初始版本,实现基础 MCP 服务

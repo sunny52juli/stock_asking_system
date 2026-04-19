@@ -1,25 +1,20 @@
+"""Agent 工具模块 - 桥接 Deep Agent 与本地执行逻辑.
+
+模块化设计:
+- bridge: 主入口，创建所有桥接工具
+- tool_executor: 统一调用本地工具和 MCP 工具
+- logic_validator: 验证 screening_logic 结构
+- strategy_resolver: 从配置文件查找策略名称
+- screening_executor: 执行股票筛选
+- script_saver: 生成并保存筛选脚本
 """
-Bridge 工具模块
 
-提供供 Deep Agent 调用的本地工具工厂函数，连接 Agent 与本地数据和执行逻辑:
-- create_run_screening: 创建 run_screening 工具
-- create_get_available_industries: 创建 get_available_industries 工具
-- create_save_screening_script: 创建 save_screening_script 工具
-- create_bridge_tools: 创建所有桥接工具
-
-这些工厂函数需要注入数据访问函数来创建实际的工具函数。
-"""
-
-from src.agent.tools.bridge import (
-    create_bridge_tools,
-    create_get_available_industries,
-    create_run_screening,
-    create_save_screening_script,
-)
+from .bridge import create_bridge_tools
+from .screening_executor import get_last_screening_result
+from .tool_executor import execute_tool_impl
 
 __all__ = [
-    "create_run_screening",
-    "create_get_available_industries",
-    "create_save_screening_script",
     "create_bridge_tools",
+    "get_last_screening_result",
+    "execute_tool_impl",
 ]

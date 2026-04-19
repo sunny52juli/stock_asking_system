@@ -9,12 +9,20 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from dotenv import load_dotenv
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# 加载 .env 文件
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class LLMConfig(BaseModel):
@@ -24,7 +32,15 @@ class LLMConfig(BaseModel):
     api_url: str = Field(default=os.getenv("DEFAULT_API_URL", "https://api.deepseek.com/v1"))
     temperature: float = Field(default=0.7, ge=0.0, le=1.0)
     max_tokens: int = Field(default=4096, gt=0)
-    
+
+    @field_validator('api_key')
+    @classmethod
+    def validate_api_key(cls, v: str) -> str:
+        """验证 API Key 不为空."""
+        if not v or v.strip() == '':
+            logger.warning("LLM API Key is not set. Please set DEFAULT_API_KEY environment variable.")
+        return v
+
     def to_dict(self) -> dict[str, Any]:
         """转换为字典."""
         return {
@@ -48,7 +64,6 @@ class BacktestConfig(BaseModel):
     """回测配置."""
     holding_periods: list[int] = Field(default=[4, 10, 20])
     screening_date: str = Field(default="20260201")
-    index_code: str | None = Field(default=None)
     # observation_days 已移除，统一使用全局 observation_period_days
 
 
@@ -58,7 +73,7 @@ class StockPoolConfig(BaseModel):
     exclude_st: bool = Field(default=True)
     exclude_suspended: bool = Field(default=True)
     industry: list[str] | None = Field(default=None)  # 行业过滤列表（支持模糊匹配），None表示全市场
-    
+
     # 数据质量参数
     min_completeness_ratio: float = Field(default=0.8, ge=0.0, le=1.0)
     max_missing_days: int = Field(default=5, gt=0)
@@ -81,7 +96,7 @@ class OutputConfig(BaseModel):
 
 class HarnessConfig(BaseModel):
     """约束框架配置."""
-    max_iterations: int = Field(default=25, gt=0)
+    max_iterations: int = Field(default=3, gt=0)  # 降低默认值，避免无限循环（原25）
     max_consecutive_errors: int = Field(default=3, gt=0)
     max_execution_time: int = Field(default=300, gt=0)
     deep_thinking: bool = Field(default=False)  # 是否启用深度思考模式
@@ -144,7 +159,7 @@ class StrategiesConfig(BaseModel):
 class Settings(BaseModel):
     """全局设置."""
     model_config = ConfigDict(frozen=False)
-    
+
     llm: LLMConfig = Field(default_factory=LLMConfig)
     strategies: dict[str, StrategyTemplateConfig] = Field(default_factory=dict)
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
@@ -155,7 +170,7 @@ class Settings(BaseModel):
     harness: HarnessConfig = Field(default_factory=HarnessConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
-    
+
     # 全局观察期配置（统一使用此配置）
     observation_days: int = Field(default=80, gt=0, description="全局观察期长度（交易日），用于所有策略生成、回测和指标计算")
 
@@ -165,7 +180,7 @@ def _load_yaml_file(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             return yaml.safe_load(f) or {}
     except Exception as e:
         print(f"Warning: Failed to load {path}: {e}")
@@ -175,7 +190,6 @@ def _load_yaml_file(path: Path) -> dict[str, Any]:
 def _expand_env_vars(obj: Any) -> Any:
     """递归展开环境变量."""
     if isinstance(obj, str):
-        import re
         # 支持 ${VAR} 和 ${VAR:-default} 两种格式
         pattern = r'\$\{([^}:]+)(?::-([^}]*))?\}'
         def replacer(match):
@@ -192,24 +206,24 @@ def _expand_env_vars(obj: Any) -> Any:
 
 def load_settings(project_root: Path | None = None, config_files: list[str] | None = None) -> Settings:
     """加载配置（多层合并）.
-    
+
     加载顺序:
     1. setting/screening.yaml - 策略配置和高级配置
     2. setting/stock_pool.yaml - 股票池配置
     3. setting/backtest.yaml - 回测配置
     4. 环境变量 ${VAR:-default} (.env 文件)
-    
+
     Args:
         project_root: 项目根目录
         config_files: 指定要加载的配置文件列表（相对于 setting/ 目录），
                      为 None 时加载所有配置文件
-        
+
     Returns:
         Settings实例
     """
     if project_root is None:
         project_root = Path.cwd()
-    
+
     # 默认加载所有配置文件
     if config_files is None:
         config_files = [
@@ -217,10 +231,14 @@ def load_settings(project_root: Path | None = None, config_files: list[str] | No
             "stock_pool.yaml",
             "backtest.yaml",
         ]
-    
-    # 构建完整路径
-    config_paths = [project_root / "setting" / f for f in config_files]
-    
+
+    # 构建完整路径（兼容 setting/ 和 app/setting/ 两种目录结构）
+    config_paths = []
+    for f in config_files:
+        p1 = project_root / "setting" / f
+        p2 = project_root / "app" / "setting" / f
+        config_paths.append(p1 if p1.exists() else p2)
+
     # 按顺序加载并合并
     config_dict = {}
     for config_path in config_paths:
@@ -228,10 +246,10 @@ def load_settings(project_root: Path | None = None, config_files: list[str] | No
         if loaded:
             # 深度合并（注意：需要接收返回值）
             config_dict = _deep_merge(config_dict, loaded)
-    
+
     # 展开环境变量
     config_dict = _expand_env_vars(config_dict)
-    
+
     # 转换为Settings对象
     return Settings(**config_dict)
 
@@ -251,17 +269,18 @@ def _deep_merge(base: dict, override: dict) -> dict:
 _settings_cache: Settings | None = None
 
 
-def get_settings(reload: bool = False, config_files: list[str] | None = None) -> Settings:
+def get_settings(reload: bool = False, config_files: list[str] | None = None, project_root: Path | None = None) -> Settings:
     """获取全局设置（单例模式）.
-    
+
     Args:
         reload: 是否重新加载配置
         config_files: 指定要加载的配置文件列表，为 None 时加载所有
-        
+        project_root: 项目根目录，为 None 时使用 Path.cwd()
+
     Returns:
         Settings实例
     """
     global _settings_cache
     if _settings_cache is None or reload:
-        _settings_cache = load_settings(config_files=config_files)
+        _settings_cache = load_settings(project_root=project_root, config_files=config_files)
     return _settings_cache

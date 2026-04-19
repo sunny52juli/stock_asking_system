@@ -1,26 +1,17 @@
 """FactorDataLoader: backtest data and stock pool via datahub Stock and Calendar.
 
+from infrastructure.config.settings import StockConfig
+from infrastructure.errors.exceptions import DataLoadError, StockPoolError
 可选用; 更底层用法请直接用 datahub.Stock + datahub.Calendar。
 """
 
 from __future__ import annotations
 
-import pandas as pd
-
 from datahub.entries import Calendar, Stock
 from datahub.loaders.base import BaseDataLoader
 from datahub.loaders.stock_loader import _get_stock_pool_from_datahub
-
-try:
-    from infrastructure.config.settings import StockConfig
-except ImportError:
-    StockConfig = None  # type: ignore[misc, assignment]
-
-try:
-    from infrastructure.errors.exceptions import DataLoadError, StockPoolError
-except ImportError:
-    DataLoadError = Exception  # type: ignore[misc, assignment]
-    StockPoolError = Exception  # type: ignore[misc, assignment]
+from infrastructure.config.settings import Settings
+from infrastructure.errors.exceptions import DataLoadError, StockPoolError
 
 
 class FactorDataLoader(BaseDataLoader):
@@ -38,7 +29,7 @@ class FactorDataLoader(BaseDataLoader):
         self._stock = stock or Stock()
         self._calendar = calendar or Calendar()
 
-    def load_data(self, **kwargs: object) -> pd.DataFrame:
+    def load_data(self, **kwargs: object) -> "pl.DataFrame":
         return self.load_backtest_data(**kwargs)
 
     def get_stock_pool(
@@ -59,8 +50,9 @@ class FactorDataLoader(BaseDataLoader):
         Returns:
             股票代码列表
         """
-        if index_code is None and StockConfig is not None:
-            index_code = getattr(StockConfig, "BACKTEST_DEFAULT_INDEX_CODE", None)
+        if index_code is None:
+            settings = Settings()
+            index_code = settings.stock_pool.index_code if hasattr(settings.stock_pool, 'index_code') else None
         if index_code:
             print(f"📊 使用指数 {index_code} 的成分股作为股票池")
         else:
@@ -86,39 +78,40 @@ class FactorDataLoader(BaseDataLoader):
         start_date: str | None = None,
         end_date: str | None = None,
         stock_pool: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> "pl.DataFrame":
         # 使用筛选日期计算数据范围（包含持有期收益统计需要的未来数据）
-        if start_date is None and StockConfig is not None:
-            screening_date = getattr(StockConfig, "BACKTEST_SCREENING_DATE", None)
+        settings = Settings()
+        if start_date is None:
+            screening_date = getattr(settings.backtest, "screening_date", None) if hasattr(settings, 'backtest') else None
             if screening_date:
-                start_date = StockConfig.get_data_start_date(screening_date)  # 往前推观察期
+                start_date = settings.backtest.get_data_start_date(screening_date) if hasattr(settings.backtest, 'get_data_start_date') else "20200101"
             else:
                 start_date = "20200101"
-        if end_date is None and StockConfig is not None:
-            screening_date = getattr(StockConfig, "BACKTEST_SCREENING_DATE", None)
+        if end_date is None:
+            screening_date = getattr(settings.backtest, "screening_date", None) if hasattr(settings, 'backtest') else None
             if screening_date:
-                end_date = StockConfig.get_data_end_date(screening_date)  # 往后推持有期
+                end_date = settings.backtest.get_data_end_date(screening_date) if hasattr(settings.backtest, 'get_data_end_date') else "20240331"
             else:
                 end_date = "20240331"
         print(f"📊 加载回测数据: {start_date} ~ {end_date}")
         df = self._stock.price(start_date=start_date, end_date=end_date)
-        if df is None or df.empty:
+        if df.is_empty():
             raise DataLoadError(
                 f"无法获取回测时间范围内的数据 ({start_date}~{end_date})",
                 details={"start_date": start_date, "end_date": end_date},
             )
-        self._data = df.copy()
+        self._data = df
         pool = stock_pool or self._stock_pool
         if pool:
-            self._data = self._data[self._data["ts_code"].isin(pool)]
-        self._data = self.set_multi_index(self._data)
-        print(f"✅ 已加载本地数据: {len(self._data)} 条记录")
-        if isinstance(self._data.index, pd.MultiIndex):
-            print(
-                f"   时间范围: {self._data.index.get_level_values('trade_date').min()} ~ {self._data.index.get_level_values('trade_date').max()}"
-            )
-            print(f"   股票数量: {self._data.index.get_level_values('ts_code').nunique()} 只")
-        print("   索引结构: MultiIndex(trade_date, ts_code)")
+            self._data = self._data.filter(pl.col("ts_code").is_in(pool))
+        # Polars 使用 sort 代替 MultiIndex
+        self._data = self._data.sort(["trade_date", "ts_code"])
+        print(f"✅ 已加载本地数据: {self._data.height} 条记录")
+        print(
+            f"   时间范围: {self._data.select(pl.col('trade_date').min())[0, 0]} ~ {self._data.select(pl.col('trade_date').max())[0, 0]}"
+        )
+        print(f"   股票数量: {self._data.select(pl.col('ts_code').n_unique())[0, 0]} 只")
+        print("   索引结构: sorted by (trade_date, ts_code)")
         return self._data
 
     def load_backtest_data(
@@ -128,8 +121,9 @@ class FactorDataLoader(BaseDataLoader):
         end_date: str | None = None,
     ) -> pd.DataFrame:
         # 使用筛选日期作为股票池的 trade_date
-        if end_date is None and StockConfig is not None:
-            end_date = getattr(StockConfig, "BACKTEST_SCREENING_DATE", None)
+        settings = Settings()
+        if end_date is None:
+            end_date = getattr(settings.backtest, "screening_date", None) if hasattr(settings, 'backtest') else None
         
         stock_pool = self.get_stock_pool(
             index_code=index_code,
@@ -141,16 +135,16 @@ class FactorDataLoader(BaseDataLoader):
             stock_pool=stock_pool,
         )
 
-    def get_single_date_data(self, trade_date: str) -> pd.DataFrame:
+    def get_single_date_data(self, trade_date: str) -> "pl.DataFrame":
         df = self._stock.price(date=trade_date)
-        if df is None or df.empty:
+        if df.is_empty():
             raise DataLoadError(
                 f"无法获取 {trade_date} 的数据",
                 details={"trade_date": trade_date},
             )
         return df
 
-    def clean_data(self, data: pd.DataFrame | None = None) -> pd.DataFrame:
+    def clean_data(self, data: "pl.DataFrame | None" = None) -> "pl.DataFrame":
         cleaned = super().clean_data(data)
-        print(f"✅ 数据清洗完成: {len(cleaned)} 条记录")
+        print(f"✅ 数据清洗完成: {cleaned.height if cleaned is not None else 0} 条记录")
         return cleaned

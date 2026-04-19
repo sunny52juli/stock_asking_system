@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
+import polars as pl
 
-import pandas as pd
 
 from datahub.core.dataset import Dataset, DatasetMeta, DatasetRegistry
 from datahub.core.exceptions import DataNotFoundError
@@ -15,7 +15,7 @@ class ParquetStore(Repository):
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
 
-    def load(self, query: Query) -> pd.DataFrame:
+    def load(self, query: Query) -> "pl.DataFrame":
         meta, _ = DatasetRegistry.get(query.dataset)
 
         if not query.is_range:
@@ -32,7 +32,7 @@ class ParquetStore(Repository):
             return self._load_partition(single, meta)
 
         dates = self._filter_dates(meta, query.start_date, query.end_date)
-        dfs: list[pd.DataFrame] = []
+        dfs: list["pl.DataFrame"] = []
         for d in dates:
             single = Query(
                 dataset=query.dataset,
@@ -50,10 +50,10 @@ class ParquetStore(Repository):
             raise DataNotFoundError(
                 f"No data for {query.dataset.value} in {query.start_date}~{query.end_date}"
             )
-        return pd.concat(dfs, ignore_index=True)
+        return pl.concat(dfs)
 
-    def save(self, dataset: Dataset, data: pd.DataFrame, partition_key: str) -> bool:
-        if data is None or data.empty:
+    def save(self, dataset: Dataset, data: "pl.DataFrame", partition_key: str) -> bool:
+        if data is None or data.is_empty():
             logger.warning("⚠️ Empty data, skip save: %s/%s", dataset.value, partition_key)
             return False
 
@@ -77,11 +77,11 @@ class ParquetStore(Repository):
             logger.debug("Cache already exists: %s (will overwrite)", path)
 
         try:
-            data.to_parquet(path, engine="pyarrow", compression="snappy")
-            logger.info("✅ Saved: %s (%d rows, %d cols)", path, len(data), len(data.columns))
+            data.write_parquet(path, compression="snappy")
+            logger.info("✅ Saved: %s (%d rows, %d cols)", path, data.height, data.width)
             return True
         except Exception as e:
-            logger.error("❌ Save failed: %s, error=%s (type=%s, rows=%d)", path, e, type(e).__name__, len(data))
+            logger.error("❌ Save failed: %s, error=%s (type=%s, rows=%d)", path, e, type(e).__name__, data.height)
             # 尝试删除可能损坏的文件
             if path.exists():
                 try:
@@ -109,23 +109,23 @@ class ParquetStore(Repository):
         dates = self.available_dates(dataset)
         return dates[-1] if dates else None
 
-    def _load_partition(self, query: Query, meta: DatasetMeta) -> pd.DataFrame:
+    def _load_partition(self, query: Query, meta: DatasetMeta) -> "pl.DataFrame":
         partition_key = self._resolve_partition_key(query, meta)
         path = self.root / meta.storage_path / f"{partition_key}.parquet"
 
         if not path.exists():
-            logger.info("❌ Cache MISS: %s (file not found)", path.name)
+            logger.debug("❌ Cache MISS: %s (file not found)", path.name)
             raise DataNotFoundError(f"Not found: {path}")
 
-        df = pd.read_parquet(path)
-        logger.info("✅ Cache HIT: %s (%d rows, %d cols)", path.name, len(df), len(df.columns))
+        df = pl.read_parquet(path)
+        logger.debug("✅ Cache HIT: %s (%d rows, %d cols)", path.name, df.height, df.width)
 
         if query.codes and meta.code_column in df.columns:
-            df = df[df[meta.code_column].isin(query.codes)]
+            df = df.filter(pl.col(meta.code_column).is_in(query.codes))
         if query.fields:
             available = [c for c in query.fields if c in df.columns]
             if available:
-                df = df[available]
+                df = df.select(available)
 
         return df
 

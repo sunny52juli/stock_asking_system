@@ -1,5 +1,6 @@
 """错误重试管理器 - 智能错误分类和参数调整.
 
+from src.agent.memory.long_term import LongTermMemory
 - 6种错误类型分类（增强版）
 - 自动参数调整策略（支持筛选条件自适应）
 - 最大重试次数控制
@@ -14,10 +15,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from src.agent.memory.long_term import LongTermMemory
 
 logger = logging.getLogger(__name__)
 

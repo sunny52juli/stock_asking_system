@@ -2,16 +2,21 @@
 
 import pytest
 import pandas as pd
+import polars as pl
 from unittest.mock import Mock, patch
+from pathlib import Path
 
-
+from datahub.core.dataset import Dataset, DatasetMeta, DatasetRegistry, FetchStep
+from datahub.core.exceptions import DataNotFoundError
+from datahub.core.query import Query
+from datahub.core.repository import Repository
+from datahub.store.parquet_store import ParquetStore
+from datahub.sync.sync_repo import SyncRepository
 class TestQuery:
     """测试 Query 数据类。"""
     
     def test_query_single_date(self):
         """测试单日查询创建。"""
-        from datahub.core.query import Query
-        from datahub.core.dataset import Dataset
         
         query = Query(
             dataset=Dataset.STOCK_DAILY,
@@ -26,8 +31,6 @@ class TestQuery:
     
     def test_query_date_range(self):
         """测试日期范围查询创建。"""
-        from datahub.core.query import Query
-        from datahub.core.dataset import Dataset
         
         query = Query(
             dataset=Dataset.STOCK_DAILY,
@@ -42,8 +45,6 @@ class TestQuery:
     
     def test_query_validation(self):
         """测试查询参数验证。"""
-        from datahub.core.query import Query
-        from datahub.core.dataset import Dataset
         
         # 同时提供 date 和日期范围应该报错
         with pytest.raises(ValueError):
@@ -60,7 +61,6 @@ class TestDataset:
     
     def test_dataset_values(self):
         """测试数据集枚举值。"""
-        from datahub.core.dataset import Dataset
         
         assert Dataset.STOCK_DAILY.value == 'stock_daily'
         assert Dataset.STOCK_BASIC.value == 'stock_basic'
@@ -71,7 +71,6 @@ class TestDatasetMeta:
     
     def test_dataset_meta_creation(self):
         """测试数据集元数据创建。"""
-        from datahub.core.dataset import DatasetMeta, Dataset
         
         meta = DatasetMeta(
             dataset=Dataset.STOCK_DAILY,
@@ -95,7 +94,6 @@ class TestDatasetRegistry:
     
     def test_register_and_get(self):
         """测试注册和获取数据集配置。"""
-        from datahub.core.dataset import DatasetRegistry, DatasetMeta, Dataset, FetchStep
         
         # 创建一个测试数据集
         test_dataset = Dataset.STOCK_DAILY
@@ -127,14 +125,12 @@ class TestRepository:
     
     def test_repository_is_abstract(self):
         """测试 Repository 是抽象类，不能直接实例化。"""
-        from datahub.core.repository import Repository
         
         with pytest.raises(TypeError):
             Repository()
     
     def test_repository_subclass_must_implement_methods(self):
         """测试 Repository 子类必须实现所有抽象方法。"""
-        from datahub.core.repository import Repository
         
         class IncompleteRepo(Repository):
             pass
@@ -149,9 +145,6 @@ class TestSyncRepository:
     @patch('datahub.sync.sync_repo.DatasetRegistry')
     def test_load_from_cache(self, mock_registry):
         """测试从缓存加载数据。"""
-        from datahub.sync.sync_repo import SyncRepository
-        from datahub.core.query import Query
-        from datahub.core.dataset import Dataset, DatasetMeta
         
         # Mock store 和 source
         mock_store = Mock()
@@ -187,18 +180,14 @@ class TestSyncRepository:
     @patch('datahub.sync.sync_repo.DatasetRegistry')
     def test_load_cache_miss_fetches_from_source(self, mock_registry):
         """测试缓存未命中时从数据源获取。"""
-        from datahub.sync.sync_repo import SyncRepository
-        from datahub.core.query import Query
-        from datahub.core.dataset import Dataset, DatasetMeta
-        from datahub.core.exceptions import DataNotFoundError
         
         # Mock store 抛出异常（缓存未命中）
         mock_store = Mock()
         mock_store.load.side_effect = DataNotFoundError("Not found")
         
-        # Mock source 返回数据
+        # Mock source 返回数据 (polars)
         mock_source = Mock()
-        mock_df = pd.DataFrame({'ts_code': ['000001.SZ'], 'close': [10.0]})
+        mock_df = pl.DataFrame({'ts_code': ['000001.SZ'], 'close': [10.0]})
         mock_source.call.return_value = mock_df
         
         # Mock registry
@@ -213,7 +202,6 @@ class TestSyncRepository:
             partition_key_template='{date}',
             description='Test'
         )
-        from datahub.core.dataset import FetchStep
         pipeline = [FetchStep(api_name='daily', param_mapping={'trade_date': 'date'})]
         mock_registry.get.return_value = (meta, pipeline)
         
@@ -222,28 +210,27 @@ class TestSyncRepository:
         
         result = repo.load(query)
         
-        assert not result.empty
+        assert not result.is_empty()
         mock_store.load.assert_called_once()
         mock_source.call.assert_called()  # 应该调用数据源
     
     def test_check_data_quality(self):
         """测试数据质量检查。"""
-        from datahub.sync.sync_repo import SyncRepository
         
         mock_store = Mock()
         mock_source = Mock()
         repo = SyncRepository(mock_store, mock_source)
         
-        # 高质量数据
-        good_data = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
+        # 高质量数据 (polars)
+        good_data = pl.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
         assert repo._check_data_quality(good_data) == 0.0
         
-        # 低质量数据（50% NaN）
-        bad_data = pd.DataFrame({'a': [1, None], 'b': [None, 2]})
+        # 低质量数据（50% null）
+        bad_data = pl.DataFrame({'a': [1, None], 'b': [None, 2]})
         assert repo._check_data_quality(bad_data) == 0.5
         
         # 空数据
-        empty_data = pd.DataFrame()
+        empty_data = pl.DataFrame()
         assert repo._check_data_quality(empty_data) == 1.0
 
 
@@ -252,8 +239,6 @@ class TestParquetStore:
     
     def test_parquet_store_init(self):
         """测试 ParquetStore 初始化。"""
-        from datahub.store.parquet_store import ParquetStore
-        from pathlib import Path
         
         store = ParquetStore(Path('/tmp/test'))
         

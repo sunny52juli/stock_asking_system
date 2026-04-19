@@ -2,15 +2,15 @@ import logging
 import time
 from datetime import datetime, timedelta
 from typing import Any
-
-import pandas as pd
-
+import polars as pl
 from datahub.core.dataset import Dataset, DatasetMeta, DatasetRegistry, FetchStep
 from datahub.core.exceptions import DataNotFoundError
 from datahub.core.query import Query
 from datahub.core.repository import Repository
 from datahub.core.source import DataSource
 
+from datahub.domain.calendar import Calendar
+from datahub.domain.calendar import Calendar as CalendarDomain
 logger = logging.getLogger(__name__)
 
 
@@ -25,7 +25,7 @@ class SyncRepository(Repository):
         self.source = source
         self.auto_save = auto_save
 
-    def load(self, query: Query) -> pd.DataFrame:
+    def load(self, query: Query) -> "pl.DataFrame":
         meta, pipeline = DatasetRegistry.get(query.dataset)
 
         if not query.is_range:
@@ -36,7 +36,7 @@ class SyncRepository(Repository):
 
         return self._fetch_range_direct(query, meta, pipeline)
 
-    def save(self, dataset: Dataset, data: pd.DataFrame, partition_key: str) -> bool:
+    def save(self, dataset: Dataset, data: "pl.DataFrame", partition_key: str) -> bool:
         return self.store.save(dataset, data, partition_key)
 
     def exists(self, dataset: Dataset, partition_key: str) -> bool:
@@ -53,11 +53,12 @@ class SyncRepository(Repository):
         query: Query,
         meta: DatasetMeta,
         pipeline: list[FetchStep],
-    ) -> pd.DataFrame:
+    ) -> "pl.DataFrame":
         # 尝试从缓存加载
         try:
             result = self.store.load(query)
-            logger.info("✅ Cache HIT: %s/%s", query.dataset.value, query.date)
+            # 只在 debug 级别记录缓存命中，避免日志噪音
+            logger.debug("✅ Cache HIT: %s/%s", query.dataset.value, query.date)
             return result
         except DataNotFoundError as e:
             logger.debug("Cache not found: %s/%s, error=%s", query.dataset.value, query.date, e)
@@ -73,7 +74,7 @@ class SyncRepository(Repository):
         )
         data = self._execute_pipeline(pipeline, query)
 
-        if data is None or data.empty:
+        if data is None or data.is_empty():
             # 静默跳过空数据（可能是非交易日、节假日或数据不可用）
             raise DataNotFoundError(
                 f"No data for {query.dataset.value}/{query.date} from local or {self.source.name}."
@@ -123,9 +124,8 @@ class SyncRepository(Repository):
         query: Query,
         meta: DatasetMeta,
         pipeline: list[FetchStep],
-    ) -> pd.DataFrame:
+    ) -> "pl.DataFrame":
         # 如果指定日期不是交易日，自动选择最近的交易日
-        from datahub.domain.calendar import Calendar as CalendarDomain
         calendar_domain = CalendarDomain()
         
         adjusted_start_date = query.start_date
@@ -166,10 +166,9 @@ class SyncRepository(Repository):
         # 优先使用交易日历过滤非交易日
         if query.start_date and query.end_date:
             try:
-                from datahub.domain.calendar import Calendar as CalendarDomain
                 calendar_domain = CalendarDomain()  # 不需要传 store 参数
                 trade_dates = calendar_domain.get_trade_dates(query.start_date, query.end_date)
-                logger.info(
+                logger.debug(
                     "📅 Calendar call: start=%s, end=%s, result_count=%s",
                     query.start_date,
                     query.end_date,
@@ -177,7 +176,7 @@ class SyncRepository(Repository):
                 )
                 if trade_dates:
                     dates = trade_dates
-                    logger.info(
+                    logger.debug(
                         "📅 Using trade calendar: %d trading days found (%s ~ %s)",
                         len(dates),
                         dates[0] if dates else "N/A",
@@ -206,33 +205,39 @@ class SyncRepository(Repository):
                 fields=query.fields,
                 index_code=query.index_code,
             )
-            logger.info("🚀 Attempting direct range load: %s ~ %s", query.start_date, query.end_date)
+            logger.debug("🚀 Attempting direct range load: %s ~ %s", query.start_date, query.end_date)
             result = self._fetch_range_direct(range_query, meta, pipeline)
-            if result is not None and not result.empty:
+            # 兼容 polars 和 pandas
+            is_empty = (
+                (hasattr(result, 'is_empty') and result.is_empty()) or
+                (hasattr(result, 'empty') and result.empty) or
+                result is None or
+                len(result) == 0
+            )
+            if not is_empty:
                 # 验证返回的数据是否包含完整的日期范围
                 if meta.date_column and meta.date_column in result.columns:
-                    actual_dates = sorted(result[meta.date_column].unique().tolist())
+                    actual_dates = sorted(result[meta.date_column].unique().to_list())
                     min_date = str(actual_dates[0])[:10].replace("-", "")
                     max_date = str(actual_dates[-1])[:10].replace("-", "")
-                    logger.info("✅ Loaded date range directly: %s~%s, shape=%s, actual_range=%s~%s", 
+                    logger.debug("✅ Loaded date range directly: %s~%s, shape=%s, actual_range=%s~%s", 
                                query.start_date, query.end_date, result.shape, min_date, max_date)
                     
                     # 如果实际数据范围与请求范围不一致，回退到逐日加载
                     if min_date > query.start_date or max_date < query.end_date:
-                        logger.warning("⚠️ Direct range load returned incomplete data (%s~%s vs requested %s~%s), falling back to daily loop",
+                        logger.debug("⚠️ Direct range load returned incomplete data (%s~%s vs requested %s~%s), falling back to daily loop",
                                       min_date, max_date, query.start_date, query.end_date)
                         raise DataNotFoundError("Incomplete date range from direct load")
                 else:
-                    logger.info("✅ Loaded date range directly: %s~%s, shape=%s", query.start_date, query.end_date, result.shape)
+                    logger.debug("✅ Loaded date range directly: %s~%s, shape=%s", query.start_date, query.end_date, result.shape)
                 return result
         except Exception as e:
             # 如果批量加载失败，回退到逐日加载
-            logger.error("❌ Direct range load failed: %s, falling back to daily loop", e)
-            logger.debug("Direct range load failed, falling back to daily loop")
+            logger.debug("❌ Direct range load failed: %s, falling back to daily loop", e)
             pass
         
         # 原始逻辑：逐日加载
-        dfs: list[pd.DataFrame] = []
+        dfs: list["pl.DataFrame"] = []
         cache_misses: list[str] = []  # 收集 cache miss 的日期
         cache_hits: list[str] = []  # 收集 cache hit 的日期
 
@@ -276,16 +281,41 @@ class SyncRepository(Repository):
             raise DataNotFoundError(
                 f"No data for {query.dataset.value} in {query.start_date}~{query.end_date}"
             )
-        return pd.concat(dfs, ignore_index=True)
+        
+        # 统一列顺序后再合并（避免不同日期缓存文件列顺序不一致）
+        if len(dfs) > 1:
+            # 使用所有 DataFrame 的列并集作为基准
+            all_columns = set()
+            for df in dfs:
+                all_columns.update(df.columns)
+            reference_cols = list(all_columns)
+            
+            aligned_dfs = []
+            for df in dfs:
+                missing_cols = set(reference_cols) - set(df.columns)
+                extra_cols = set(df.columns) - set(reference_cols)
+                
+                df_aligned = df
+                # 添加缺失列
+                if missing_cols:
+                    df_aligned = df_aligned.with_columns([pl.lit(None).alias(col) for col in missing_cols])
+                # 删除多余列（理论上不会有）
+                if extra_cols:
+                    df_aligned = df_aligned.drop(list(extra_cols))
+                # 重新排序
+                df_aligned = df_aligned.select(reference_cols)
+                aligned_dfs.append(df_aligned)
+            return pl.concat(aligned_dfs)
+        else:
+            return pl.concat(dfs)
 
     def _fetch_range_direct(
         self,
         query: Query,
         meta: DatasetMeta,
         pipeline: list[FetchStep],
-    ) -> pd.DataFrame:
+    ) -> "pl.DataFrame":
         # 范围查询：先检查缓存完整性，缺失则逐日填充
-        from datahub.domain.calendar import Calendar
         
         calendar = Calendar()
         trade_dates = calendar.get_trade_dates(query.start_date, query.end_date)
@@ -293,9 +323,9 @@ class SyncRepository(Repository):
         if not trade_dates:
             raise DataNotFoundError(f"No trading days in {query.start_date}~{query.end_date}")
         
-        logger.info("📅 Range query: checking %d trading days (%s ~ %s)", len(trade_dates), query.start_date, query.end_date)
+        logger.debug("📅 Range query: checking %d trading days (%s ~ %s)", len(trade_dates), query.start_date, query.end_date)
         
-        all_results: list[pd.DataFrame] = []
+        all_results: list["pl.DataFrame"] = []
         missing_dates: list[str] = []
         
         # 第一步：检查每个交易日的缓存
@@ -310,7 +340,7 @@ class SyncRepository(Repository):
             
             try:
                 cached = self.store.load(single_query)
-                if not cached.empty:
+                if not cached.is_empty():
                     all_results.append(cached)
                 else:
                     missing_dates.append(trade_date)
@@ -323,22 +353,47 @@ class SyncRepository(Repository):
             
             for trade_date in missing_dates:
                 day_result = self._execute_single_day_pipeline(pipeline, trade_date, query)
-                if day_result is not None and not day_result.empty:
+                if day_result is not None and not day_result.is_empty():
                     all_results.append(day_result)
                     
                     # 自动缓存
                     if meta.date_column and meta.date_column in day_result.columns:
                         pk = meta.partition_key_template.format(
                             date=trade_date,
-                            index_code=(query.index_code or "").replace(".", "_"),
                         )
+                        logger.info(f"💾 保存缓存: {query.dataset.value}/{pk} ({len(day_result)} rows)")
                         self._safe_save(query.dataset, day_result, pk)
         
         if not all_results:
             raise DataNotFoundError(f"No data for {query.dataset.value} range query")
         
-        result = pd.concat(all_results, ignore_index=True)
-        logger.info("✅ Range query completed: %d rows from %d days", len(result), len(all_results))
+        # 统一列顺序后再合并
+        if len(all_results) > 1:
+            # 使用所有 DataFrame 的列并集作为基准
+            all_columns = set()
+            for df in all_results:
+                all_columns.update(df.columns)
+            reference_cols = list(all_columns)
+            
+            aligned_results = []
+            for df in all_results:
+                missing_cols = set(reference_cols) - set(df.columns)
+                extra_cols = set(df.columns) - set(reference_cols)
+                
+                df_aligned = df
+                # 添加缺失列
+                if missing_cols:
+                    df_aligned = df_aligned.with_columns([pl.lit(None).alias(col) for col in missing_cols])
+                # 删除多余列（理论上不会有）
+                if extra_cols:
+                    df_aligned = df_aligned.drop(list(extra_cols))
+                # 重新排序
+                df_aligned = df_aligned.select(reference_cols)
+                aligned_results.append(df_aligned)
+            result = pl.concat(aligned_results)
+        else:
+            result = pl.concat(all_results)
+        logger.debug("✅ Range query completed: %d rows from %d days", len(result), len(all_results))
         
         # 数据质量检测
         nan_ratio = self._check_data_quality(result)
@@ -356,8 +411,8 @@ class SyncRepository(Repository):
         self,
         pipeline: list[FetchStep],
         query: Query,
-    ) -> pd.DataFrame | None:
-        base: pd.DataFrame | None = None
+    ) -> "pl.DataFrame | None":
+        base: "pl.DataFrame | None" = None
 
         for i, step in enumerate(pipeline):
             # 范围查询时，跳过只依赖 date 参数的可选步骤
@@ -377,7 +432,7 @@ class SyncRepository(Repository):
             if step.rate_limit_sleep > 0:
                 time.sleep(step.rate_limit_sleep)
 
-            if result is None or result.empty:
+            if result is None or result.is_empty():
                 if i == 0:
                     return None
                 if not step.optional:
@@ -390,16 +445,21 @@ class SyncRepository(Repository):
             if step.fields:
                 keep = list(set(step.fields) | set(step.merge_on))
                 available = [c for c in keep if c in result.columns]
-                result = result[available]
+                result = result.select(available)
 
             if i == 0:
                 base = result
             else:
-                base = base.merge(  # type: ignore[union-attr]
+                # Polars join: remove duplicate columns from result before joining
+                # to avoid DuplicateError
+                common_cols = [c for c in result.columns if c in base.columns and c not in step.merge_on]
+                if common_cols:
+                    result = result.drop(common_cols)
+                
+                base = base.join(  # type: ignore[union-attr]
                     result,
                     on=step.merge_on,
                     how="left",
-                    suffixes=("", f"__{step.api_name}"),
                 )
 
         if base is not None:
@@ -434,19 +494,19 @@ class SyncRepository(Repository):
 
     def _apply_filters(
         self,
-        data: pd.DataFrame,
+        data: "pl.DataFrame",
         query: Query,
         meta: DatasetMeta,
-    ) -> pd.DataFrame:
+    ) -> "pl.DataFrame":
         if query.codes and meta.code_column in data.columns:
-            data = data[data[meta.code_column].isin(query.codes)]
+            data = data.filter(pl.col(meta.code_column).is_in(query.codes))
         if query.fields:
             available = [c for c in query.fields if c in data.columns]
             if available:
-                data = data[available]
+                data = data.select(available)
         return data
 
-    def _check_data_quality(self, data: pd.DataFrame) -> float:
+    def _check_data_quality(self, data: "pl.DataFrame") -> float:
         """
         检查数据质量，计算 NaN 比例。
         
@@ -456,28 +516,29 @@ class SyncRepository(Repository):
         Returns:
             NaN 单元格占总单元格的比例 (0.0 ~ 1.0)
         """
-        if data is None or data.empty:
+        if data is None or data.is_empty():
             return 1.0  # 空数据视为 100% NaN
         
-        total_cells = data.size
+        total_cells = data.height * data.width
         if total_cells == 0:
             return 1.0
         
-        nan_count = data.isna().sum().sum()
+        # Count nulls in polars
+        nan_count = sum(data[col].null_count() for col in data.columns)
         nan_ratio = nan_count / total_cells
         
         return nan_ratio
 
-    def _clean_duplicate_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _clean_duplicate_columns(self, df: "pl.DataFrame") -> "pl.DataFrame":
         dupe_cols = [c for c in df.columns if "__" in c]
         if dupe_cols:
-            df = df.drop(columns=dupe_cols)
+            df = df.drop(dupe_cols)
         return df
 
     def _safe_save(
         self,
         dataset: Dataset,
-        data: pd.DataFrame,
+        data: "pl.DataFrame",
         partition_key: str,
     ) -> bool:
         """Save data and return True if successful, False otherwise."""
@@ -487,7 +548,7 @@ class SyncRepository(Repository):
                 logger.info("Auto-cached: %s/%s", dataset.value, partition_key)
             else:
                 # 明确记录保存失败的原因（空数据或 save 返回 False）
-                if data is None or data.empty:
+                if data is None or data.is_empty():
                     logger.warning("⚠️ Auto-cache skipped: %s/%s (empty data)", dataset.value, partition_key)
                 else:
                     logger.warning("⚠️ Auto-cache returned False: %s/%s (possible I/O error)", dataset.value, partition_key)
@@ -513,9 +574,9 @@ class SyncRepository(Repository):
         pipeline: list[FetchStep],
         trade_date: str,
         original_query: Query,
-    ) -> pd.DataFrame | None:
+    ) -> "pl.DataFrame | None":
         """执行单日的 pipeline。"""
-        base: pd.DataFrame | None = None
+        base: "pl.DataFrame | None" = None
         
         for i, step in enumerate(pipeline):
             # 构建单日查询参数
@@ -533,7 +594,7 @@ class SyncRepository(Repository):
             if step.rate_limit_sleep > 0:
                 time.sleep(step.rate_limit_sleep)
             
-            if result is None or result.empty:
+            if result is None or result.is_empty():
                 if i == 0:
                     return None
                 if not step.optional:
@@ -543,16 +604,20 @@ class SyncRepository(Repository):
             if step.fields:
                 keep = list(set(step.fields) | set(step.merge_on))
                 available = [c for c in keep if c in result.columns]
-                result = result[available]
+                result = result.select(available)
             
             if i == 0:
                 base = result
             else:
-                base = base.merge(
+                # Polars join: remove duplicate columns from result before joining
+                common_cols = [c for c in result.columns if c in base.columns and c not in step.merge_on]
+                if common_cols:
+                    result = result.drop(common_cols)
+                
+                base = base.join(
                     result,
                     on=step.merge_on,
                     how="left",
-                    suffixes=("", f"__{step.api_name}"),
                 )
         
         if base is not None:

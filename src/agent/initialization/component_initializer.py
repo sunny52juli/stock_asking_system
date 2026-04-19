@@ -14,6 +14,10 @@ from src.agent.tools.provider import ScreenerToolProvider
 from utils.agent.llm_helper import build_llm_from_api_config
 from src.agent.harness.rules import RulesLoader
 
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from src.agent.context.prompt_builder import build_base_prompt
+from src.agent.core.agent_factory import create_screener_agent
+from src.agent.harness.rules import RulesLoader
 logger = get_logger(__name__)
 
 
@@ -70,12 +74,11 @@ class ComponentInitializer:
     
     def _load_rules(self):
         """加载规则文件."""
-        self.rules = RulesLoader.load(self.project_root / "setting")
+        self.rules = RulesLoader.load(self.project_root / ".stock_asking")
         logger.info(f"📋 已加载 {len(self.rules)} 条规则")
     
     def _build_system_prompt(self):
         """构建系统提示词."""
-        from src.agent.context.prompt_builder import build_base_prompt
         
         # 先创建临时的 tool_provider 和 skill_registry
         temp_tool_provider = ScreenerToolProvider(mcp_tools=[], bridge_tools={})
@@ -84,7 +87,6 @@ class ComponentInitializer:
         base_prompt = build_base_prompt(temp_tool_provider, temp_skill_registry)
         
         if self.rules:
-            from src.agent.harness.rules import RulesLoader
             rules_section = RulesLoader.build_rules_section(self.rules)
             self.system_prompt = base_prompt + rules_section
             logger.info(f"✅ 已加载 {len(self.rules)} 条规则到 system prompt")
@@ -101,7 +103,6 @@ class ComponentInitializer:
         """加载MCP工具."""
         logger.info("正在加载 MCP 工具...")
         try:
-            from langchain_mcp_adapters.client import MultiServerMCPClient
             
             connections = {
                 "screener-mcp": {
@@ -128,15 +129,15 @@ class ComponentInitializer:
         
         Args:
             data_fn: 数据访问函数
-            stock_codes: 预筛选的股票代码列表
+            stock_codes: 预筛选的股票代码列表（可选）
         """
         scripts_dir = str(self.settings.output.strategies_dir)
         
-        # 调试：确认 stock_codes 是否已设置
+        # 记录 stock_codes 状态（debug 级别，避免噪音）
         if stock_codes:
-            logger.info(f"🔧 Orchestrator 准备传递 stock_codes：{len(stock_codes)} 只")
+            logger.debug(f"🔧 Bridge工具使用 {len(stock_codes)} 只股票的过滤池")
         else:
-            logger.warning("⚠️ Orchestrator 未设置 stock_codes，将传递 None")
+            logger.debug("🔧 Bridge工具未设置股票池，将使用全市场数据")
         
         self.bridge_tools = create_bridge_tools(
             data_fn=data_fn,
@@ -151,15 +152,27 @@ class ComponentInitializer:
             mcp_tools=self.mcp_tools,
             bridge_tools=self.bridge_tools,
         )
-        logger.info("✅ 工具提供者创建完成")
+        logger.info(f"✅ 工具提供者创建完成: {len(self.mcp_tools)} MCP + {len(self.bridge_tools)} Bridge")
     
     def _init_skills_and_memory(self):
         """初始化技能和记忆."""
         logger.info("初始化 Skills Registry...")
         self.skill_registry = SkillRegistry()
-        skills_dir = Path(self.settings.output.strategies_dir).parent / "src.agent" / "skills"
+        # 使用 .stock_asking/skills 作为 Skills 目录
+        skills_dir = self.project_root / ".stock_asking" / "skills"
+        logger.info(f"🔍 Skills目录路径: {skills_dir}")
+        logger.info(f"🔍 路径是否存在: {skills_dir.exists()}")
         if skills_dir.exists():
+            skill_files = list(skills_dir.rglob("SKILL.md"))
+            logger.info(f"🔍 找到 {len(skill_files)} 个 SKILL.md 文件")
+            for f in skill_files:
+                logger.info(f"   - {f.relative_to(skills_dir.parent)}")
             self.skill_registry.load_local_skills(str(skills_dir))
+            logger.info(f"✅ Skills 加载完成，共 {len(self.skill_registry.all_skills)} 个: {list(self.skill_registry.all_skills.keys())}")
+        else:
+            logger.warning(f"⚠️ Skills 目录不存在: {skills_dir}")
+            logger.warning(f"   当前工作目录: {Path.cwd()}")
+            logger.warning(f"   project_root: {self.project_root}")
         
         logger.info("初始化 Long-term Memory...")
         self.long_term_memory = LongTermMemory(self.project_root / ".stock_asking" / "memory.db")
@@ -178,18 +191,21 @@ class ComponentInitializer:
         Returns:
             (agent, initial_files) 元组
         """
-        from src.agent.core.agent_factory import create_screener_agent
         
         logger.info(f"创建 Agent (deep_thinking={self.settings.harness.deep_thinking}, max_iterations={self.settings.harness.max_iterations})...")
+        
+        # 使用 .stock_asking/skills 作为 Skills 目录
+        skills_dir = self.project_root / ".stock_asking" / "skills"
         
         agent, initial_files = create_screener_agent(
             llm=llm,
             tool_provider=tool_provider,
             skill_registry=skill_registry,
             long_term_memory=long_term_memory,
-            skills_dir=Path(self.settings.output.strategies_dir).parent / "src.agent" / "skills",
+            skills_dir=skills_dir,
             deep_thinking=self.settings.harness.deep_thinking,
             max_iterations=self.settings.harness.max_iterations,
+            query=query,
         )
         logger.info("✅ Agent 创建完成")
         

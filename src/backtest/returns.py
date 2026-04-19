@@ -5,9 +5,8 @@
 """
 
 from __future__ import annotations
-
-import pandas as pd
 import numpy as np
+import pandas as pd
 from typing import Any
 
 from infrastructure.logging.logger import get_logger
@@ -33,6 +32,13 @@ class ReturnsCalculator:
         """
         self.data = data
         self.holding_periods = holding_periods
+        
+        # 调试：打印数据类型
+        logger.info(f"🔍 ReturnsCalculator 初始化：data type={type(data)}, shape={data.shape if hasattr(data, 'shape') else 'N/A'}")
+        if hasattr(data, 'columns'):
+            logger.debug(f"   列: {list(data.columns)}")
+        if hasattr(data, 'index'):
+            logger.debug(f"   Index type: {type(data.index)}")
     
     def calculate_returns(
         self,

@@ -1,11 +1,20 @@
 """可观测性模块 - OpenTelemetry 集成.
 
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import (
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export import SpanExportResult
+from src.agent.config import TelemetryConfig
+from src.agent.telemetry import get_tracer, get_meter, record_metric
 提供 Trace Span 和 Metrics 支持，默认关闭不影响性能。
 通过 settings.yaml 中的 telemetry.enabled 配置开关。
 
 使用方法::
 
-    from src.agent.telemetry import get_tracer, get_meter, record_metric
 
     tracer = get_tracer()
     with tracer.start_as_current_span("my_operation") as span:
@@ -23,12 +32,10 @@ import json
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+, Any
 
-from infrastructure.logging import get_logger
+from infrastructure.logging.logger import get_logger
 
-if TYPE_CHECKING:
-    from src.agent.config import TelemetryConfig
 
 logger = get_logger(__name__)
 
@@ -108,10 +115,6 @@ def init_telemetry(config: TelemetryConfig) -> None:
         return
 
     try:
-        from opentelemetry import metrics, trace
-        from opentelemetry.sdk.metrics import MeterProvider
-        from opentelemetry.sdk.resources import Resource
-        from opentelemetry.sdk.trace import TracerProvider
 
         resource = Resource.create({"service.name": "stock-asking-agent"})
 
@@ -119,7 +122,6 @@ def init_telemetry(config: TelemetryConfig) -> None:
         tracer_provider = TracerProvider(resource=resource)
 
         if config.exporter == "console":
-            from opentelemetry.sdk.trace.export import (
                 ConsoleSpanExporter,
                 SimpleSpanProcessor,
             )
@@ -127,17 +129,14 @@ def init_telemetry(config: TelemetryConfig) -> None:
             tracer_provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
 
         elif config.exporter == "otlp" and config.endpoint:
-            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
                 OTLPSpanExporter,
             )
-            from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
             tracer_provider.add_span_processor(
                 BatchSpanProcessor(OTLPSpanExporter(endpoint=config.endpoint))
             )
 
         elif config.exporter == "file":
-            from opentelemetry.sdk.trace.export import (
                 SimpleSpanProcessor,
             )
 
@@ -204,7 +203,6 @@ class _FileSpanExporter:
                 f.write(json.dumps(span_data, ensure_ascii=False, default=str) + "\n")
         # 返回 SUCCESS
         try:
-            from opentelemetry.sdk.trace.export import SpanExportResult
 
             return SpanExportResult.SUCCESS
         except ImportError:

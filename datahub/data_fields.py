@@ -1,4 +1,5 @@
 """
+import re
 数据字段配置 - 定义系统支持的所有股票数据字段
 
 设计原则：
@@ -43,7 +44,6 @@ class DataFields:
         "vwap": "vwap",  # 成交量加权平均价
         "pct_change": "pct_change",  # 日收益率
         "ret": "ret",  # 收益率
-        "ret1": "ret1",  # 次日收益率
         "volatility": "volatility",  # 波动率
     }
 
@@ -243,7 +243,6 @@ class DataFields:
             "vwap": "成交量加权平均价",
             "pct_change": "日收益率",
             "ret": "收益率",
-            "ret1": "次日收益率",
             "volatility": "波动率",
             # 行业/市场字段
             "industry": "所属行业",
@@ -264,7 +263,6 @@ class DataFields:
         Returns:
             验证结果字典 {'valid': [...], 'invalid': [...]}
         """
-        import re
 
         # 提取表达式中的中文字段（如"收盘价"）
         chinese_fields = re.findall(r"[\u4e00-\u9fa5]+", expression)
@@ -484,7 +482,6 @@ FIELD_MAPPING = {
     # 衍生字段
     "均价": "vwap",
     "收益率": "ret",
-    "次日收益率": "ret1",
     "波动率": "volatility",
 }
 
@@ -573,7 +570,6 @@ FIELD_DESCRIPTIONS = {
     # 衍生字段
     "vwap": "成交量加权平均价 = 成交额 / 成交量",
     "ret": "收益率（同pct_change）",
-    "ret1": "次日收益率（用于回测）",
     "volatility": "波动率",
 }
 
@@ -629,7 +625,7 @@ def generate_field_markdown():
             "net_mf_amount",
         ],
         "融资融券字段": ["rzye", "rqye", "rzmre", "rqyl", "rzche", "rqchl", "rqmcl", "rzrqye"],
-        "衍生字段（系统自动计算）": ["vwap", "ret", "ret1", "volatility"],
+        "衍生字段（系统自动计算）": ["vwap", "ret", "volatility"],
     }
 
     # 生成 Markdown
@@ -710,7 +706,7 @@ def print_field_summary():
             "net_mf_amount",
         ],
         "融资融券": ["rzye", "rqye", "rzmre", "rqyl", "rzche", "rqchl", "rqmcl", "rzrqye"],
-        "衍生字段": ["vwap", "ret", "ret1", "volatility"],
+        "衍生字段": ["vwap", "ret", "volatility"],
     }
 
     print("\n📊 字段分类统计:")

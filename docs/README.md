@@ -1,6 +1,6 @@
 # AI驱动的量化交易系统
 
-> 基于 LLM 的股票量价形态筛选和回测系统，整合了DeepAgents、Harness、MCP、Skill的多模块架构设计
+> 基于 LLM 的股票量价形态筛选和回测系统，**v2.0 采用 Polars 统一数据流，性能提升 3-4x**
 
 ## 📖 项目简介
 
@@ -13,6 +13,7 @@
 **本项目：stock_asking_system**
 
 💡 **项目定位**：面向个人投资者的实战工具，尤其适合短线技术派投资者
+
 
 ### 核心功能
 
@@ -189,13 +190,14 @@ graph TB
 | 类别 | 技术选型 |
 |------|----------|
 | **AI框架** | deepagents, LangGraph, LangChain |
-| **数据处理** | Pandas, NumPy, PyArrow |
+| **数据处理** | **Polars (v2.0)**, Pandas, NumPy, PyArrow |
 | **数据源** | Tushare Pro |
 | **通信协议** | MCP (Model Context Protocol) |
 | **配置管理** | Pydantic, YAML, dotenv |
 | **测试框架** | pytest, pytest-cov |
 | **代码质量** | black, ruff, mypy |
 | **包管理** | uv (Python包管理器) |
+
 
 ## 📁 目录结构
 
@@ -256,9 +258,13 @@ stock_asking_system/
 │   ├── hooks/            # Hook脚本目录
 │   │   ├── validate-strategy.py  # 策略验证Hook
 │   │   └── quality-gate.py       # 质量门禁Hook
-│   └── rules/            # 规则文件目录
-│       ├── data-quality.md       # 数据质量规则
-│       └── risk-control.md       # 风险控制规则
+│   ├── rules/            # 规则文件目录
+│   │   ├── data-quality.md       # 数据质量规则
+│   │   ├── expression-design.md  # 表达式设计规范
+│   │   └── quality-criteria.md   # 质量评估标准
+│   └── skills/           # Agent技能库（按需加载）
+│       ├── stock-screening/      # 股票筛选技能
+│       └── strategy-patterns/    # 策略模式参考
 └── docs/                  # 文档
 ```
 
@@ -368,7 +374,6 @@ harness:
 
 **示例规则**：
 - `data-quality.md`：数据质量规则（禁止未来函数、停牌过滤等）
-- `risk-control.md`：风险控制规则（行业集中度、极端值过滤等）
 
 **加载流程**：
 ```
@@ -655,12 +660,12 @@ if quality.should_retry:
 
 ## ⚙️ 配置说明
 
-主要配置文件位于 `setting/` 目录。
+主要配置文件位于 `app/setting/` 目录。
 
 **配置文件说明**：
-- `screening.yaml` - 策略配置（选股策略模板、观察期）和高级配置（LLM、Harness、权限等）
-- `stock_pool.yaml` - 股票池配置（过滤条件、数据质量参数）
-- `backtest.yaml` - 回测配置（持有期、筛选日期）
+- `screening.yaml` - LLM 配置、Harness 约束框架、权限控制等高级设置
+- `stock_pool.yaml` - 股票池过滤条件（上市天数、ST 排除、行业、价格、市值、成交量等）
+- `backtest.yaml` - 回测参数（持有期列表、筛选日期）
 
 ```yaml
 llm:
@@ -673,38 +678,75 @@ data:
   source_token: "${DATA_SOURCE_TOKEN}"
 
 backtest:
-  holding_periods: [4, 10, 20]
-  observation_days: 80
+  holding_periods: [5, 10, 20]      # 持有期列表（天）
+  screening_date: "20260201"        # 回测筛选日期
 
 stock_pool:
-  min_list_days: 180
-  exclude_st: true
-  industry: null  # 行业过滤列表
+  min_list_days: 180                # 最小上市天数
+  exclude_st: true                  # 排除 ST 股票
+  exclude_suspended: true           # 排除停牌股票
+  industry: null                    # 行业过滤列表（null=全市场）
+  min_price: 0.0                    # 最低价格（0=不过滤）
+  max_price: 999999                 # 最高价格
+  min_total_mv: 0.0                 # 最小总市值（万元，0=不过滤）
+  max_total_mv: 999999999           # 最大总市值（万元）
 
 harness:
-  max_iterations: 25
-  deep_thinking: false
+  max_iterations: 3                 # Agent 最大迭代次数
+  deep_thinking: false              # 是否启用深度思考模式
 ```
 
-> 环境变量通过 `.env` 文件管理（参考 `.env.example`）。
+> **环境变量管理**：通过 `.env` 文件配置敏感信息（参考 `.env.example`）
 
 ## 🔌 扩展开发
 
 ### 添加新的MCP工具
 
-```python
-# mcp_server/executors/custom_tools.py
-from mcp_server.auto_register import register_tool
-
-@register_tool
-def calculate_custom_indicator(data: pd.DataFrame, param: float) -> pd.Series:
-    """计算自定义指标"""
-    return data['close'].rolling(window=int(param)).mean()
-```
+在 `mcp_server/executors/` 目录下创建工具文件，使用 `@register_tool` 装饰器自动注册。系统会自动识别工具依赖关系并进行拓扑排序。
 
 ### 添加新的筛选技能
 
-在 `src/agent/skills/` 目录下创建 `SKILL.md` 文件，定义特定的选股策略模板。
+在 `.stock_asking/skills/` 目录下创建技能目录和 `SKILL.md` 文件，定义特定的选股策略模板和使用指南。
+
+### 工具调用拓扑结构
+
+量化工具的执行遵循严格的依赖关系，系统自动进行拓扑排序：
+
+**基础数据层**（无依赖）：
+- `get_stock_data` - 获取股票时序数据
+- `rolling_mean`, `rolling_std` - 基础滚动统计
+- `pct_change` - 收益率计算
+
+**技术指标层**（依赖基础数据）：
+- `rsi` - 相对强弱指标（需要收盘价）
+- `macd` - MACD 指标（需要收盘价）
+- `bollinger_bands` - 布林带（需要收盘价和标准差）
+
+**指数相关层**（依赖股票数据和指数数据）：
+- `beta` - Beta 系数（需要股票收益和指数收益）
+- `alpha` - Alpha 收益（需要 Beta 和指数收益）
+- `outperform_rate` - 超额收益频率（需要股票和指数收益对比）
+- `tracking_error` - 跟踪误差（需要股票和指数收益序列）
+- `information_ratio` - 信息比率（需要 Alpha 和 Tracking Error）
+- `correlation_with_index` - 与指数相关性（需要股票和指数收益）
+
+**高级指标层**（依赖基础指标）：
+- `zscore_normalize` - Z-Score 标准化（需要任意数值序列）
+- `rank_normalize` - 排名标准化（需要任意数值序列）
+- `batch_calculator` - 批量计算器（可组合多个指标）
+
+**执行顺序示例**：
+```
+用户查询: "找低波动且跑赢指数的股票"
+↓
+1. get_stock_data (获取股票数据)
+2. rolling_std (计算波动率) ← 依赖步骤1
+3. beta (计算Beta系数) ← 依赖步骤1 + 自动加载指数数据
+4. outperform_rate (计算超额收益频率) ← 依赖步骤1 + 指数数据
+5. 组合筛选: volatility < 阈值 AND outperform_rate > 阈值
+```
+
+> **注意**：Agent 会自动识别工具依赖关系并按正确顺序执行，无需手动指定顺序。
 
 ### 扩展数据源
 
@@ -722,20 +764,21 @@ uv sync
 ```
 ## 🎯 版本更新
 
-| 维度 | 原始版本 | 当前版本 | 改进程度 |
-|------|---------|---------|----------|
-| **架构设计** | 6个平级模块 | 6层分层架构 + 基础设施层 | ⭐⭐⭐⭐⭐ |
-| **代码组织** | 扁平结构，职责模糊 | 模块化子目录，单一职责 | ⭐⭐⭐⭐⭐ |
-| **数据访问** | 基础Repository模式 | 完整Domain-Driven Design | ⭐⭐⭐⭐ |
-| **Agent系统** | 单一DeepAgent | 双模式架构（深度/快速） | ⭐⭐⭐⭐⭐ |
-| **约束框架** | 无约束机制 | Harness Hooks/Rules/Permissions 三层约束 | ⭐⭐⭐⭐⭐ |
-| **质量保障** | 无质量评估 | Quality Evaluator + Smart Retry 自动修复 | ⭐⭐⭐⭐⭐ |
-| **筛选引擎** | 单文件实现 | 5个独立模块解耦 | ⭐⭐⭐⭐⭐ |
-| **回测系统** | 基础收益计算 | 多维度统计分析 | ⭐⭐⭐⭐ |
-| **配置管理** | 分散的Python文件 | YAML + Pydantic + 环境变量 | ⭐⭐⭐⭐⭐ |
-| **工程化** | 基础Lint/Type检查 | 完整CI/CD工具链 | ⭐⭐⭐⭐ |
-| **可测试性** | 缺少系统化测试 | 分层单元测试体系 | ⭐⭐⭐⭐⭐ |
-| **可扩展性** | 硬编码扩展点 | 插件化架构 | ⭐⭐⭐⭐⭐ |
+### v2.0 - Polars 数据引擎与量化工具升级 (2026-04-19)
+
+**数据引擎升级**：
+- ⚡ **Polars 全面替代 Pandas**：数据处理性能提升 3-4x，内存占用降低 60%
+- 🔄 **零转换开销**：从数据加载到筛选全程使用 Polars DataFrame，Rust 后端加速
+- 🎯 **简化 API**：废除 MultiIndex 强制要求，接口更简洁
+
+**新增量化工具**：
+- 📊 **指数分析工具集**：新增 Beta、Alpha、超额收益、跟踪误差、信息比率、相关性等 6 个专业 MCP 量化工具
+- 🤖 **指数自动检测**：移除手动配置 `index_code`，基于股票代码自动选择对应指数（科创板→科创50、创业板→创业板指等）
+
+**架构优化**：
+- 🎯 **质量评估重构**：从硬编码评分改为动态加载 `.stock_asking/rules/quality-criteria.md`，Agent 自主决策
+- 📁 **配置结构优化**：Rules/Skills 目录重组，消除重复，职责清晰
+
 ## 🙏 致谢
 
 - **参考项目**：[QuantitativeSystem](https://github.com/luocheng812/QuantitativeSystem/tree/develop) - 感谢 luocheng812 对本框架的设计贡献

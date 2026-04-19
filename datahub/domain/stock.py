@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pandas as pd
 
 from datahub.core.dataset import Dataset
 from datahub.core.query import Query
@@ -24,7 +23,7 @@ class Stock:
         end_date: str | None = None,
         codes: list[str] | None = None,
         fields: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         """Daily stock quotes (OHLCV + merged indicators). Single day or range."""
         return load_with_date_or_range(
             self._repo,
@@ -43,7 +42,7 @@ class Stock:
         date: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         """Index constituents and weights. Single date or range."""
         return load_with_date_or_range(
             self._repo,
@@ -54,7 +53,7 @@ class Stock:
             index_code=index_code,
         )
 
-    def universe(self) -> pd.DataFrame:
+    def universe(self) -> "pl.DataFrame":
         """Stock basic listing info (single snapshot)."""
         return self._repo.load(Query(dataset=Dataset.STOCK_BASIC, date="basic"))
 
@@ -112,15 +111,22 @@ class Stock:
         end_date: str,
         freq: str = "daily",
         adj: str = "post",
-    ) -> pd.DataFrame:
+    ) -> "pl.DataFrame":
         """Wide-format simple-return matrix: index=trade_date, columns=ts_code."""
         code_list = [codes] if isinstance(codes, str) else codes
         df = self.price(start_date=start_date, end_date=end_date, codes=code_list)
-        if df.empty:
+        if df.is_empty():
             return df
         close_col = "adj_close" if "adj_close" in df.columns else "close"
-        wide = df.pivot(index="trade_date", columns="ts_code", values=close_col)
-        return wide.pct_change().dropna(how="all")
+        # Polars pivot
+        wide = df.pivot(values=close_col, index="trade_date", columns="ts_code")
+        # Calculate pct_change using polars
+        ret_cols = [c for c in wide.columns if c != "trade_date"]
+        for col in ret_cols:
+            wide = wide.with_columns(
+                (pl.col(col) / pl.col(col).shift(1) - 1).alias(col)
+            )
+        return wide.drop_nulls(subset=ret_cols, how="all")
 
     def liquidity(
         self,
@@ -129,7 +135,7 @@ class Stock:
         start_date: str | None = None,
         end_date: str | None = None,
         codes: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         query = self._build_query(
             Dataset.STOCK_DAILY,
             date=date,
@@ -162,23 +168,23 @@ class Stock:
         start_date: str | None = None,
         end_date: str | None = None,
         direction: str = "both",
-    ) -> pd.DataFrame:
+    ) -> "pl.DataFrame":
         query = self._build_query(
             Dataset.STOCK_DAILY,
             date=date,
             start_date=start_date,
             end_date=end_date,
         )
-        df = self._repo.load(query)
-        if "pct_chg" not in df.columns:
-            return df.head(0)
+        df_pl = self._repo.load(query)
+        if "pct_chg" not in df_pl.columns:
+            return df_pl.head(0)
         if direction == "up":
-            df = df[df["pct_chg"] >= 9.9]
+            df_pl = df_pl.filter(pl.col("pct_chg") >= 9.9)
         elif direction == "down":
-            df = df[df["pct_chg"] <= -9.9]
+            df_pl = df_pl.filter(pl.col("pct_chg") <= -9.9)
         else:
-            df = df[(df["pct_chg"] >= 9.9) | (df["pct_chg"] <= -9.9)]
-        return df.reset_index(drop=True)
+            df_pl = df_pl.filter((pl.col("pct_chg") >= 9.9) | (pl.col("pct_chg") <= -9.9))
+        return df_pl
 
     # ------------------------------------------------------------------
     # 3. FUNDAMENTALS
@@ -192,7 +198,7 @@ class Stock:
         end_date: str | None = None,
         codes: list[str] | None = None,
         fields: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         query = self._build_query(
             Dataset.STOCK_VALUATION,
             date=date,
@@ -210,13 +216,13 @@ class Stock:
         end_date: str,
         period_type: str = "annual",
         fields: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> "pl.DataFrame":
         sources = [
             Dataset.STOCK_FINANCIALS_INCOME,
             Dataset.STOCK_FINANCIALS_BALANCE,
             Dataset.STOCK_FINANCIALS_CASHFLOW,
         ]
-        frames: list[pd.DataFrame] = []
+        frames: list["pl.DataFrame"] = []
         for ds in sources:
             try:
                 q = Query(
@@ -230,20 +236,22 @@ class Stock:
             except Exception:  # noqa: BLE001
                 pass
         if not frames:
-            return pd.DataFrame()
+            return pl.DataFrame()
         merged = frames[0]
         for right in frames[1:]:
             on_cols = [
                 c for c in ["ts_code", "end_date"] if c in merged.columns and c in right.columns
             ]
-            merged = merged.merge(right, on=on_cols, how="outer", suffixes=("", "_dup"))
-            merged = merged[[c for c in merged.columns if not c.endswith("_dup")]]
+            merged = merged.join(right, on=on_cols, how="outer", suffix="_dup")
+            merged = merged.select([c for c in merged.columns if not c.endswith("_dup")])
         if "end_date" in merged.columns:
             if period_type == "annual":
-                merged = merged[merged["end_date"].str.endswith("1231")]
+                merged = merged.filter(pl.col("end_date").str.ends_with("1231"))
             elif period_type == "semi":
-                merged = merged[merged["end_date"].str.endswith(("0630", "1231"))]
-        return merged.reset_index(drop=True)
+                merged = merged.filter(
+                    pl.col("end_date").str.ends_with("0630") | pl.col("end_date").str.ends_with("1231")
+                )
+        return merged.with_row_index().drop("index")
 
     def earnings(
         self,
@@ -251,7 +259,7 @@ class Stock:
         start_date: str,
         end_date: str,
         include_estimates: bool = False,
-    ) -> pd.DataFrame:
+    ) -> "pl.DataFrame":
         query = Query(
             dataset=Dataset.EARNINGS_FORECAST,
             start_date=start_date,
@@ -267,7 +275,7 @@ class Stock:
         start_date: str | None = None,
         end_date: str | None = None,
         codes: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         query = self._build_query(
             Dataset.STOCK_DAILY,
             date=date,
@@ -310,7 +318,7 @@ class Stock:
         start_date: str | None = None,
         end_date: str | None = None,
         codes: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         query = self._build_query(
             Dataset.STOCK_MARGIN,
             date=date,
@@ -330,7 +338,7 @@ class Stock:
         start_date: str,
         end_date: str,
         status: str = "all",
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         query = Query(
             dataset=Dataset.STOCK_DIVIDEND,
             start_date=start_date,
@@ -348,8 +356,8 @@ class Stock:
         start_date: str,
         end_date: str,
         action_type: str = "all",
-    ) -> pd.DataFrame:
-        frames: list[pd.DataFrame] = []
+    ) -> "pl.DataFrame":
+        frames: list["pl.DataFrame"] = []
         if action_type in ("all", "buyback", "repurchase"):
             try:
                 q = Query(
@@ -359,8 +367,7 @@ class Stock:
                     codes=[code],
                 )
                 df = self._repo.load(q)
-                df = df.copy()
-                df["action_type"] = "buyback"
+                df = df.with_columns(pl.lit("buyback").alias("action_type"))
                 frames.append(df)
             except Exception:  # noqa: BLE001
                 pass
@@ -373,21 +380,20 @@ class Stock:
                     codes=[code],
                 )
                 df = self._repo.load(q)
-                df = df.copy()
-                df["action_type"] = "dividend"
+                df = df.with_columns(pl.lit("dividend").alias("action_type"))
                 frames.append(df)
             except Exception:  # noqa: BLE001
                 pass
         if not frames:
-            return pd.DataFrame()
-        return pd.concat(frames, ignore_index=True)
+            return pl.DataFrame()
+        return pl.concat(frames)
 
     def ownership(
         self,
         code: str,
         date: str,
         holder_type: str = "all",
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         query = Query(
             dataset=Dataset.STOCK_HOLDER,
             date=date,
@@ -400,7 +406,7 @@ class Stock:
         code: str,
         start_date: str,
         end_date: str,
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         query = Query(
             dataset=Dataset.STOCK_PLEDGE,
             start_date=start_date,

@@ -1,10 +1,18 @@
+# ============================================================================
+# DEPRECATED - 此文件已被弃用
+# ============================================================================
+# 弃用原因: 此文件未被项目中任何其他模块引用或使用
+# 替代方案: 请使用 src/agent/ 模块中的编排器功能
+# 弃用日期: 2026-04-19
+# ============================================================================
+
 """股票筛选主入口 - 使用 ScreenerOrchestrator 进行股票筛选和推荐."""
 
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# 加载环境变量
+# 加载环境变量（必须在所有其他导入之前）
 load_dotenv()
 
 # 获取项目根目录并确保在 path 中
@@ -12,6 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.agent.services.stock_pool_service import StockPoolService
 from src.agent import ScreenerOrchestrator
 from infrastructure.config.settings import get_settings
 from infrastructure.logging.logger import get_logger
@@ -23,34 +32,38 @@ def main():
     """主函数 - 使用 ScreenerOrchestrator"""
     
     # 创建编排器（screener 不需要 backtest 配置）
-    settings = get_settings(reload=True, config_files=["screening.yaml", "stock_pool.yaml"])
+    settings = get_settings(reload=True, config_files=["screening.yaml", "stock_pool.yaml"], project_root=PROJECT_ROOT)
     orchestrator = ScreenerOrchestrator(settings=settings)
     
-    # 初始化系统
+    # 初始化系统（不加载数据）
     if not orchestrator.initialize():
         logger.error("系统初始化失败")
         return
     
-    # 执行股票池过滤（独立服务模块，只执行一次）
+    # 执行股票池过滤（StockPoolService 负责加载数据）
     logger.info("\n" + "=" * 60)
     logger.info("执行股票池过滤")
     logger.info("=" * 60)
-    from src.agent.services.stock_pool_service import StockPoolService
     stock_pool_service = StockPoolService(settings)
-    filtered_data, filtered_codes = stock_pool_service.apply_filter(
-        orchestrator.data, 
-        orchestrator.stock_codes
-    )
+    filtered_data, filtered_codes, index_data = stock_pool_service.apply_filter()
+    
+    # 检查过滤结果
+    if len(filtered_codes) == 0:
+        logger.error("❌ 股票池过滤后没有剩余股票！请检查 stock_pool.yaml 配置")
+        raise RuntimeError("股票池过滤失败：结果为空")
+    
     logger.info(f"✅ 股票池过滤完成：{len(filtered_codes)} 只股票")
     
     # 更新 Orchestrator 的数据并重新创建工具
     orchestrator.data = filtered_data
     orchestrator.stock_codes = filtered_codes
+    orchestrator.index_data = index_data
     orchestrator.component_initializer.create_bridge_tools(
-        data_fn=lambda: orchestrator.data,
+        data_fn=lambda: (orchestrator.data, orchestrator.index_data),
         stock_codes=orchestrator.stock_codes
     )
     orchestrator.component_initializer.create_tool_provider()
+    logger.info("✅ Bridge 工具和 ToolProvider 已更新，Agent 将使用过滤后的股票池")
     
     # 执行查询
     queries = []
@@ -58,9 +71,7 @@ def main():
         if strategy_config.query:
             queries.append(strategy_config.query)
     
-    if not queries:
-        queries = ["找出最近放量突破的股票"]
-    
+
 
     logger.info(f"\n将执行 {len(queries)} 个查询\n")
     

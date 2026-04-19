@@ -2,7 +2,7 @@
 
 Each agent receives only the tools relevant to its role:
 - IntentAgent: No tools (pure NLU)
-- PlannerAgent: Tool metadata + get_available_industries
+- PlannerAgent: Tool metadata
 - ExecutorAgent: ALL MCP tools + run_screening
 - EvaluatorAgent: save_screening_script
 """
@@ -20,7 +20,7 @@ class ScreenerToolProvider:
 
     _AGENT_TOOL_MAP: dict[str, dict[str, list[str]]] = {
         "intent": {"mcp": [], "bridge": []},
-        "planner": {"mcp": [], "bridge": ["get_available_industries"]},
+        "planner": {"mcp": [], "bridge": []},
         "executor": {"mcp": ["__ALL__"], "bridge": ["run_screening"]},
         "evaluator": {
             "mcp": [],
@@ -43,7 +43,7 @@ class ScreenerToolProvider:
         self._bridge_tools = bridge_tools
         self._mcp_by_name = {t.name: t for t in mcp_tools}
 
-        logger.info(
+        logger.debug(
             "ScreenerToolProvider initialized with %d MCP tools and %d bridge tools",
             len(mcp_tools),
             len(bridge_tools),
@@ -104,6 +104,8 @@ class ScreenerToolProvider:
             List of dicts with 'name' and 'description' keys
         """
         descriptions = []
+        
+        # Add MCP tools
         for tool in self._mcp_tools:
             desc = {
                 "name": tool.name,
@@ -111,7 +113,16 @@ class ScreenerToolProvider:
             }
             descriptions.append(desc)
 
-        logger.debug("Returning %d tool descriptions", len(descriptions))
+        # Add bridge tools
+        for name, tool_func in self._bridge_tools.items():
+            desc = {
+                "name": name,
+                "description": getattr(tool_func, "__doc__", f"Bridge tool: {name}"),
+            }
+            descriptions.append(desc)
+
+        logger.debug("Returning %d tool descriptions (%d MCP + %d bridge)", 
+                    len(descriptions), len(self._mcp_tools), len(self._bridge_tools))
         return descriptions
 
     @property

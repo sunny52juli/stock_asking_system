@@ -1,18 +1,23 @@
 """查询执行器 - 负责执行用户查询."""
 
 from __future__ import annotations
-
+import numpy as np
+import json
 import time
 from typing import Any
 
 from infrastructure.logging.logger import get_logger
 from infrastructure.session import SessionManager, QueryRecord
 from infrastructure.telemetry import SimpleTelemetry
-from src.agent.execution.planner import TaskPlanner
 from utils.agent.result_checker import _is_screening_successful
 from src.screening.script_saver import ScriptSaver
 from src.screening.result_display import ResultDisplayer
 
+from infrastructure.config.settings import get_settings
+from infrastructure.errors.exceptions import AgentExecutionError
+from src.agent.tools import bridge
+from src.agent.tools.bridge import create_bridge_tools
+import json
 logger = get_logger(__name__)
 
 
@@ -25,7 +30,6 @@ class QueryExecutor:
         initial_files: dict,
         session_manager: SessionManager,
         telemetry: SimpleTelemetry,
-        planner: TaskPlanner,
         quality_evaluator,
         settings: Any,
         hooks=None,  # HookExecutor 实例
@@ -37,7 +41,6 @@ class QueryExecutor:
             initial_files: 初始文件上下文
             session_manager: 会话管理器
             telemetry: 遥测系统
-            planner: 任务规划器
             quality_evaluator: 质量评估器
             settings: 全局配置
             hooks: HookExecutor 实例（可选）
@@ -46,7 +49,6 @@ class QueryExecutor:
         self.initial_files = initial_files
         self.session_manager = session_manager
         self.telemetry = telemetry
-        self.planner = planner
         self.quality_evaluator = quality_evaluator
         self.settings = settings
         self.hooks = hooks  # 保存 HookExecutor 实例
@@ -54,6 +56,56 @@ class QueryExecutor:
         # 工具类
         self.result_displayer = ResultDisplayer()
         self.script_saver: ScriptSaver | None = None
+    
+    def _extract_candidates_from_messages(self, result: dict) -> dict:
+        """从 Agent 消息历史中提取 candidates.
+        
+        优先使用 Bridge 工具保存的全局最后一次筛选结果（最可靠）。
+        如果全局结果为空，则尝试从 Agent 消息中解析。
+        
+        Args:
+            result: Agent 返回的结果
+            
+        Returns:
+            添加了 candidates 字段的结果
+        """
+        # 如果 result 中已有 candidates，直接返回
+        if "candidates" in result and result["candidates"]:
+            return result
+        
+        # 方法1：优先使用 Bridge 工具保存的全局最后一次筛选结果（最可靠）
+        try:
+            last_result = bridge.get_last_screening_result()
+            if last_result and "candidates" in last_result:
+                result["candidates"] = last_result["candidates"]
+                logger.info(f"✅ 从 Bridge 工具获取到 {len(last_result['candidates'])} 只候选股票")
+                return result
+        except Exception as e:
+            logger.debug(f"从 Bridge 获取 candidates 失败: {e}")
+        
+        # 方法2：降级方案 - 从 Agent 消息中解析
+        messages = result.get("messages", [])
+        for message in messages:
+            # 尝试从 Assistant 消息的 content 中解析 run_screening 的返回结果
+            if hasattr(message, "content") and message.content:
+                try:
+                    content_str = message.content if isinstance(message.content, str) else str(message.content)
+                    # 查找 JSON 格式的 run_screening 返回结果
+                    if '"candidates"' in content_str and '"status": "success"' in content_str:
+                        # 尝试提取 JSON
+                        start = content_str.find('{')
+                        if start >= 0:
+                            json_str = content_str[start:]
+                            parsed = json.loads(json_str)
+                            if isinstance(parsed, dict) and "candidates" in parsed:
+                                result["candidates"] = parsed["candidates"]
+                                logger.info(f"✅ 从消息中提取到 {len(parsed['candidates'])} 只候选股票")
+                                return result
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        
+        logger.warning("⚠️ 未能从任何来源获取 candidates")
+        return result
     
     def execute_query(self, query: str, query_id: int) -> dict[str, Any] | None:
         """执行单个查询.
@@ -66,8 +118,8 @@ class QueryExecutor:
             查询结果或None
         """
         # 重置 run_screening 调用计数器（每个查询独立计数）
-        from src.agent.tools import bridge
         bridge._run_screening_call_count = 0
+        bridge._last_screening_result = None  # 重置最后一次筛选结果
         
         logger.info("=" * 60)
         logger.info(f"查询 {query_id}: {query}")
@@ -89,16 +141,8 @@ class QueryExecutor:
         
         try:
             with self.telemetry.trace_span("execute_query", query_id=query_id, query=query[:50]):
-                # 检查是否为复杂查询，需要任务分解
-                is_complex = not self.planner.is_simple_query(query)
-                
-                if is_complex:
-                    logger.info("🔍 检测到复杂查询，启动任务分解...")
-                    result = self._execute_complex_query(query, query_id, thread_id, session)
-                else:
-                    # 简单查询，直接执行
-                    result = self._execute_simple_query(query, query_id, thread_id, session)
-                
+                # 直接调用 Agent（deep_thinking 由 settings 控制）
+                result = self._execute_query(query, query_id, thread_id, session)
                 return result
             
         except KeyboardInterrupt:
@@ -117,7 +161,6 @@ class QueryExecutor:
             )
             session.save()
             
-            from infrastructure.errors.exceptions import AgentExecutionError
             raise AgentExecutionError(
                 f"查询执行失败：{e}",
                 error_code="QUERY_EXECUTION_FAILED",
@@ -130,15 +173,14 @@ class QueryExecutor:
                 },
             ) from e
     
-    def _execute_simple_query(
+    def _execute_query(
         self, 
         query: str, 
         query_id: int, 
         thread_id: str,
         session
     ) -> dict[str, Any] | None:
-        """执行简单查询（原有逻辑）."""
-        from infrastructure.config.settings import get_settings
+        """执行查询（统一入口）."""
         settings = get_settings()
         
         start_time = time.time()
@@ -149,20 +191,59 @@ class QueryExecutor:
             logger.error("❌ Agent 未初始化！这不应该发生，请检查 orchestrator 的初始化逻辑")
             return None
         
-        # 直接调用 Agent
-        result = self.agent.invoke(
-            {
-                "messages": [{"role": "user", "content": query}],
-                "files": self.initial_files,
-            },
-            config={
-                "configurable": {"thread_id": thread_id},
-                "recursion_limit": 50,
-            },
-        )
+        # 直接调用 Agent（带强制循环检测）
+        try:
+            # deep_thinking 模式需要更大的 recursion_limit（因为 write_todos 会消耗额外步数）
+            if self.settings.harness.deep_thinking:
+                recursion_limit = max(60, self.settings.harness.max_iterations * 20)  # deepagents: min 60
+            else:
+                recursion_limit = 30  # quick mode: 30
+            
+            logger.debug(f"Using recursion_limit={recursion_limit} (deep_thinking={self.settings.harness.deep_thinking})")
+            
+            result = self.agent.invoke(
+                {
+                    "messages": [{"role": "user", "content": query}],
+                    "files": self.initial_files,
+                },
+                config={
+                    "configurable": {"thread_id": thread_id},
+                    "recursion_limit": recursion_limit,
+                },
+            )
+        except Exception as e:
+            # 如果是 recursion limit 错误，返回友好提示
+            if "Recursion limit" in str(e):
+                logger.error("❌ Agent 陷入无限循环，已强制停止")
+                logger.warning("💡 建议：")
+                logger.warning("   1. 简化查询条件，避免过于严格的筛选")
+                logger.warning("   2. 尝试更通用的描述，如'找出表现好的股票'")
+                logger.warning("   3. 检查市场数据是否可用")
+                
+                return {
+                    "status": "failed",
+                    "message": "Agent 执行超时：无法找到符合条件的股票。可能原因：\n"
+                              "1. 筛选条件过于严格\n"
+                              "2. 当前市场环境下无符合条件的股票\n"
+                              "3. 数据不足或工具不可用\n\n"
+                              "建议：尝试简化条件或使用更通用的描述。",
+                    "error_type": "recursion_limit_exceeded",
+                    "suggestions": [
+                        "放宽筛选条件（如调整波动率阈值）",
+                        "使用更简单的描述（如'找出上涨的股票'）",
+                        "检查数据日期范围是否合理"
+                    ]
+                }
+            raise
+        
+        if result is None:
+            raise RuntimeError("Agent.invoke() 返回 None，LLM 调用失败")
         
         execution_time_ms = (time.time() - start_time) * 1000
         logger.info(f"\n✅ 查询完成 ({execution_time_ms:.0f}ms)")
+        
+        # 从 Agent 消息中提取 candidates（如果 result 中没有）
+        result = self._extract_candidates_from_messages(result)
         
         # Stop Hook: 质量门禁（使用 orchestrator 传入的 hooks）
         if self.hooks:
@@ -199,8 +280,6 @@ class QueryExecutor:
         if _is_screening_successful(result):
             # 初始化脚本保存器（如果尚未初始化）
             if self.script_saver is None:
-                from src.agent.tools.bridge import create_bridge_tools
-                from infrastructure.config.settings import get_settings
                 settings = get_settings()
                 
                 # 创建 bridge tools
@@ -243,136 +322,6 @@ class QueryExecutor:
         session.save()
         return result
     
-    def _execute_complex_query(
-        self,
-        query: str,
-        query_id: int,
-        thread_id: str,
-        session
-    ) -> dict[str, Any] | None:
-        """执行复杂查询（使用任务分解）."""
-        start_time = time.time()
-        
-        # 1. 分解任务
-        plan = self.planner.decompose_query(query)
-        self.planner.print_plan(plan)
-        
-        # 2. 按顺序执行子任务
-        context = {
-            "original_query": query,
-            "subtask_results": [],
-            "files": self.initial_files,
-        }
-        
-        for task_id in plan.execution_order:
-            task = next(t for t in plan.tasks if t.id == task_id)
-            logger.info(f"\n{'='*60}")
-            logger.info(f"▶️  执行子任务 {task.id}/{len(plan.tasks)}: {task.task_type}")
-            logger.info(f"   描述：{task.description}")
-            logger.info(f"{'='*60}")
-            
-            task.status = "running"
-            
-            try:
-                # 确保 Agent 已创建
-                if not self.agent:
-                    from src.agent.core.agent_factory import create_screener_agent
-                    from infrastructure.config.settings import get_settings
-                    settings = get_settings()
-                    self.agent, self.initial_files = create_screener_agent(
-                        llm=None,
-                        tool_provider=None,
-                        skill_registry=None,
-                        long_term_memory=None,
-                        skills_dir=None,
-                        deep_thinking=settings.harness.deep_thinking,
-                        max_iterations=settings.harness.max_iterations,
-                    )
-                
-                # 构建子任务消息
-                subtask_message = self._build_subtask_message(task, context)
-                
-                # 执行子任务
-                subtask_result = self.agent.invoke(
-                    {
-                        "messages": [{"role": "user", "content": subtask_message}],
-                        "files": context["files"],
-                    },
-                    config={
-                        "configurable": {"thread_id": f"{thread_id}-task-{task_id}"},
-                        "recursion_limit": 50,
-                    },
-                )
-                
-                # 保存子任务结果
-                context["subtask_results"].append({
-                    "task_id": task_id,
-                    "task_type": task.task_type,
-                    "result": subtask_result,
-                })
-                
-                task.status = "completed"
-                logger.info(f"✅ 子任务 {task_id} 完成")
-                
-            except Exception as e:
-                logger.exception(f"❌ 子任务 {task_id} 失败：{e}")
-                task.status = "failed"
-                task.error_message = str(e)
-        
-        # 3. 聚合结果
-        execution_time_ms = (time.time() - start_time) * 1000
-        result = self._aggregate_subtask_results(context, plan)
-        
-        # 4. 保存会话
-        session.update_query_status(
-            query_id=query_id,
-            status="success",
-            execution_time_ms=execution_time_ms,
-        )
-        session.save()
-        
-        return result
-    
-    def _build_subtask_message(self, task, context: dict) -> str:
-        """构建子任务消息."""
-        message_parts = [
-            f"任务类型：{task.task_type}",
-            f"任务描述：{task.description}",
-            f"\n原始查询：{context['original_query']}",
-        ]
-        
-        # 如果有前置任务结果，添加到上下文中
-        if context.get("subtask_results"):
-            message_parts.append("\n前置任务结果：")
-            for prev_result in context["subtask_results"]:
-                message_parts.append(f"- {prev_result['task_type']}: {str(prev_result['result'])[:200]}")
-        
-        message_parts.append("\n请执行上述任务。")
-        
-        return "\n".join(message_parts)
-    
-    def _aggregate_subtask_results(self, context: dict, plan) -> dict[str, Any]:
-        """聚合子任务结果为最终结果."""
-        # 以最后一个成功的 screening 或 code_generation 任务的结果为主
-        final_result = {
-            "candidates": context.get("screening_candidates", []),
-            "script_code": context.get("screening_code", ""),
-            "subtask_summary": {
-                "total_tasks": len(plan.tasks),
-                "completed_tasks": sum(1 for t in plan.tasks if t.status == "completed"),
-                "failed_tasks": sum(1 for t in plan.tasks if t.status == "failed"),
-            },
-        }
-        
-        # 如果有 validation 任务，合并其优化建议
-        for subtask in context.get("subtask_results", []):
-            if subtask["task_type"] == "validation" and "result" in subtask:
-                validation_result = subtask["result"]
-                if isinstance(validation_result, dict):
-                    final_result["validation_feedback"] = validation_result
-        
-        return final_result
-    
     def _extract_screening_logic_summary(self, result: dict) -> str | None:
         """从结果中提取筛选逻辑摘要（用于排查问题）.
         
@@ -390,7 +339,6 @@ class QueryExecutor:
                         if tool_call.get("name") == "run_screening":
                             args = tool_call.get("args", {})
                             if "screening_logic_json" in args:
-                                import json
                                 logic = json.loads(args["screening_logic_json"])
                                 tools_count = len(logic.get("tools", []))
                                 expression = logic.get("expression", "")[:100]
@@ -457,8 +405,9 @@ class QueryExecutor:
         Returns:
             优化后的结果，或 None（如果重试失败）
         """
-        # 使用配置中的 max_iterations（减去1，因为已经执行了1次）
-        max_retries = max(0, self.settings.harness.max_iterations - 1)
+        # 硬编码最大重试次数为 2，避免无限循环
+        max_retries = min(2, max(0, self.settings.harness.max_iterations - 1))
+        logger.info(f"🔄 质量评估触发自动优化，最多重试 {max_retries} 次")
         
         for retry_attempt in range(1, max_retries + 1):
             logger.info(f"\n🔄 第 {retry_attempt} 次自动优化...")
@@ -500,21 +449,33 @@ class QueryExecutor:
 """
             
             try:
-                # 调用 Agent 进行优化
-                retry_result = self.agent.invoke(
-                    {
-                        "messages": [
-                            {"role": "user", "content": query},
-                            {"role": "assistant", "content": str(original_result)},
-                            {"role": "user", "content": optimization_prompt},
-                        ],
-                        "files": self.initial_files,
-                    },
-                    config={
-                        "configurable": {"thread_id": f"{thread_id}-retry-{retry_attempt}"},
-                        "recursion_limit": 50,
-                    },
-                )
+                # 调用 Agent 进行优化（带强制循环检测）
+                try:
+                    # deep_thinking 模式需要更大的 recursion_limit
+                    if self.settings.harness.deep_thinking:
+                        retry_recursion_limit = max(60, self.settings.harness.max_iterations * 20)
+                    else:
+                        retry_recursion_limit = 30
+                    
+                    retry_result = self.agent.invoke(
+                        {
+                            "messages": [
+                                {"role": "user", "content": query},
+                                {"role": "assistant", "content": str(original_result)},
+                                {"role": "user", "content": optimization_prompt},
+                            ],
+                            "files": self.initial_files,
+                        },
+                        config={
+                            "configurable": {"thread_id": f"{thread_id}-retry-{retry_attempt}"},
+                            "recursion_limit": retry_recursion_limit,
+                        },
+                    )
+                except Exception as invoke_e:
+                    if "Recursion limit" in str(invoke_e):
+                        logger.error(f"❌ 第 {retry_attempt} 次优化时 Agent 陷入无限循环")
+                        continue
+                    raise
                 
                 # 重新评估质量
                 new_quality = self.quality_evaluator.evaluate(query, retry_result)

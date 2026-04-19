@@ -8,6 +8,7 @@ from typing import Any
 
 from infrastructure.logging.logger import get_logger
 
+from langchain_core.messages import HumanMessage
 logger = get_logger(__name__)
 
 
@@ -52,23 +53,24 @@ class IndustryMatcher:
         prompt = f"""你是一个行业分类专家。请帮助用户从可用行业列表中找出与用户输入最相关的行业。
 
 **重要规则**：
-1. **必须**从下面的"可用行业列表"中选择行业，不能自己创造行业名称
-2. 每个输入关键词**至少**返回 1 个最相关的行业（即使相关性不高）
-3. 按相关性从高到低排序，最相关的排在前面
+1. **必须且只能**从下面的“可用行业列表”中选择行业，**绝对不能**自己创造行业名称
+2. 返回的行业名称必须与可用行业列表中的名称**完全一致**（包括标点符号）
+3. 每个输入关键词**至少**返回 1 个最相关的行业（即使相关性不高）
+4. 按相关性从高到低排序，最相关的排在前面
+5. 如果找不到相关度高的行业，也要返回相关度最高的那个
 
 用户输入的行业关键词：
 {json.dumps(target_industries, ensure_ascii=False, indent=2)}
 
-可用行业列表（共 {len(available_industries)} 个）：
-{json.dumps(available_industries[:10], ensure_ascii=False, indent=2)}
-{"..." if len(available_industries) > 10 else ""}
+可用行业列表（共 {len(available_industries)} 个，**只能从这里选择**）：
+{json.dumps(available_industries, ensure_ascii=False, indent=2)}
 
 匹配原则：
-- 同义词或近义词：如"科技"→"计算机"、"电子"、"通信"
-- 上下游产业链：如"新能源"→"光伏"、"锂电池"、"风电"
-- 细分领域：如"医药"→"化学制药"、"中药"、"生物制品"
-- 概念板块：如"人工智能"→"软件开发"、"IT服务"
-- 部分匹配：如"芯片"→"半导体"、"集成电路"、"元件"
+- 同义词或近义词：如“科技”→“计算机应用”、“电子设备”、“通信设备”
+- 上下游产业链：如“新能源”→“光伏设备”、“电池”、“风电设备”
+- 细分领域：如“医药”→“化学制药”、“中药”、“生物制品”
+- 概念板块：如“人工智能”→“软件开发”、“IT服务”
+- **注意**：即使语义相关，也必须从上面的可用行业列表中选择最接近的
 
 请以 JSON 格式返回匹配结果：
 {{
@@ -76,10 +78,10 @@ class IndustryMatcher:
     "reasoning": "简要说明匹配理由"
 }}
 
-**只返回 JSON，不要其他内容。**"""
+**只返回 JSON，不要其他内容。**
+**再次强调：返回的行业名称必须与可用行业列表中的名称完全一致！**"""
         
         # 调用 LLM
-        from langchain_core.messages import HumanMessage
         response = self.llm.invoke([HumanMessage(content=prompt)])
         content = response.content if hasattr(response, 'content') else str(response)
         

@@ -67,16 +67,12 @@ def execute_query_with_reflection(
         logger.info("Phase 2: Reflect")
         quality_report = quality_evaluator.evaluate(query, result)
         
-        if quality_report.get('reflection_rules'):
-            logger.info("已加载 reflection.md 规则，Agent 将自行评估质量")
-        
         if quality_report['suggestions']:
             logger.info("Suggestions:")
             for suggestion in quality_report['suggestions']:
                 logger.info(f"  - {suggestion}")
         
         # === Phase 3: Decide ===
-        # 注意：should_retry 现在由 Agent 根据 reflection.md 决定
         if not quality_report.get('should_retry', False):
             logger.info("✅ Quality check passed")
             return result

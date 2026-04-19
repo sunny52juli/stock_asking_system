@@ -11,6 +11,7 @@ from typing import Any
 
 from infrastructure.logging.logger import get_logger
 
+from pathlib import Path as StdPath
 logger = get_logger(__name__)
 
 
@@ -61,7 +62,6 @@ class SimpleTelemetry:
     ):
         # 使用项目根目录作为基准路径
         if trace_dir is None:
-            from pathlib import Path as StdPath
             project_root = StdPath(__file__).resolve().parent.parent.parent
             trace_dir = project_root / ".stock_asking" / "traces"
         

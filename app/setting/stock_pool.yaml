@@ -12,8 +12,8 @@ stock_pool:
   exclude_st: true             # 排除ST股票
   exclude_suspended: true      # 排除停牌股票
   industry:                    # 行业过滤列表（支持模糊匹配），null表示全市场
-    - '通信'
-    - '芯片'
+    - '通信设备'
+    - '芯片半导体'
   
   # 数据质量参数
   min_completeness_ratio: 0.8  # 最小数据完整度 (0.0-1.0)

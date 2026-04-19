@@ -11,6 +11,7 @@ from datahub.domain.fund import Fund as _Fund
 from datahub.domain.index import Index as _Index
 from datahub.domain.news import News as _News
 from datahub.domain.stock import Stock as _Stock
+from datahub.factory import Factory
 from datahub.protocols import (
     CalendarProtocol,
     FeatureProtocol,
@@ -29,7 +30,6 @@ def _create_repo(
     mode: str = "auto",
     token: str | None = None,
 ) -> object:
-    from datahub.factory import Factory
 
     root_str = str(root) if isinstance(root, Path) else root
     return Factory.create_repo(root=root_str, token=token, mode=mode)

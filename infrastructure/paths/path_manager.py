@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """
+from utils.path_manager import PathManager, ensure_project_path
+from utils.path_manager import ensure_project_path
 路径管理器 - 统一的项目路径管理
 
 解决问题：
@@ -7,7 +9,6 @@
 - 路径处理不一致导致导入问题
 
 使用方法：
-    from utils.path_manager import PathManager, ensure_project_path
 
     # 方式1：使用类
     pm = PathManager()
@@ -156,7 +157,6 @@ def ensure_project_path() -> Path:
 
     这是最推荐的使用方式，在模块开头调用：
 
-        from utils.path_manager import ensure_project_path
         ensure_project_path()
 
     Returns:

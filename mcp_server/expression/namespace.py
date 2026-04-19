@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from typing import Any
-
+import polars as pl
 import numpy as np
-import pandas as pd
 
 
+import re
 class NamespaceBuilder:
     """命名空间构建器.
     
@@ -16,7 +16,7 @@ class NamespaceBuilder:
     
     @staticmethod
     def build_namespace(
-        data: pd.DataFrame,
+        data: pl.DataFrame,
         computed_vars: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """构建表达式的命名空间.
@@ -49,9 +49,9 @@ class NamespaceBuilder:
             "power": np.power,
             "sign": np.sign,
             
-            # Pandas
-            "pd": pd,
-            "pandas": pd,
+            # Polars
+            "pl": pl,
+            "polars": pl,
             
             # 数学常量
             "pi": np.pi,
@@ -63,7 +63,7 @@ class NamespaceBuilder:
     @staticmethod
     def infer_and_add_variables(
         namespace: dict[str, Any],
-        data: pd.DataFrame,
+        data: pl.DataFrame,
         variable_names: list[str]
     ) -> dict[str, Any]:
         """推断并添加缺失的变量到命名空间.
@@ -76,7 +76,6 @@ class NamespaceBuilder:
         Returns:
             更新后的命名空间
         """
-        import re
         
         for var_name in variable_names:
             if var_name in namespace:
@@ -95,7 +94,7 @@ class NamespaceBuilder:
         return namespace
     
     @staticmethod
-    def _infer_technical_indicator(data: pd.DataFrame, var_name: str) -> pd.Series | None:
+    def _infer_technical_indicator(data: pl.DataFrame, var_name: str) -> pl.Series | None:
         """推断技术指标.
         
         Args:
@@ -105,7 +104,6 @@ class NamespaceBuilder:
         Returns:
             计算结果 Series 或 None
         """
-        import re
         
         # MA{n}: 移动平均
         ma_match = re.match(r'(?:MA|ma)(\d+)', var_name, re.IGNORECASE)

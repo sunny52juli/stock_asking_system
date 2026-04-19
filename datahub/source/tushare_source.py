@@ -1,9 +1,9 @@
 import logging
 import time
 from typing import Any
-
-import pandas as pd
 import tushare as ts
+import polars as pl
+
 
 from infrastructure.config.settings import get_settings
 from datahub.core.source import DataSource
@@ -30,13 +30,14 @@ class TushareSource(DataSource):
     def name(self) -> str:
         return "Tushare"
 
-    def call(self, api_name: str, params: dict[str, Any]) -> pd.DataFrame | None:
+    def call(self, api_name: str, params: dict[str, Any]) -> "pl.DataFrame | None":
         for attempt in range(self.max_retry):
             try:
                 api_fn = getattr(self.pro, api_name)
                 result = api_fn(**params)
                 if result is not None and not result.empty:
-                    return result
+                    # Convert pandas DataFrame to polars immediately
+                    return pl.from_pandas(result)
                 return None
             except Exception as e:
                 if attempt < self.max_retry - 1:

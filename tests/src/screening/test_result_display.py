@@ -69,14 +69,15 @@ class TestResultDisplayer:
         
         displayer.display(result)
         
-        # 验证显示了未检测到股票代码的提示
+        # 验证显示了内容（新代码不再显示未检测到提示）
         calls = [str(call) for call in mock_logger.info.call_args_list]
         all_calls = ' '.join(calls)
-        assert '未检测到明确的股票代码' in all_calls
+        assert 'Agent 分析结果' in all_calls
+        assert '这是一段普通的分析文本' in all_calls
 
     @patch('src.screening.result_display.logger')
     def test_display_many_stock_codes(self, mock_logger):
-        """测试大量股票代码的显示限制."""
+        """测试大量股票代码的显示."""
         displayer = ResultDisplayer()
         
         # 生成25个股票代码
@@ -88,10 +89,12 @@ class TestResultDisplayer:
         
         displayer.display(result)
         
-        # 验证只显示前20个，并提示还有更多
+        # 验证显示了内容（新代码不再限制显示数量）
         calls = [str(call) for call in mock_logger.info.call_args_list]
         all_calls = ' '.join(calls)
-        assert '还有 5 只股票' in all_calls
+        assert 'Agent 分析结果' in all_calls
+        # 验证内容中包含股票代码
+        assert '000001.SZ' in all_calls
 
     @patch('src.screening.result_display.logger')
     def test_display_message_without_content_attribute(self, mock_logger):

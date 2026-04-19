@@ -1,17 +1,29 @@
+# ============================================================================
+# DEPRECATED - 此文件已被弃用
+# ============================================================================
+# 弃用原因: 此文件未被项目中任何其他模块引用或使用
+# 替代方案: 请使用 src/backtest/ 模块中的回测功能
+# 弃用日期: 2026-04-19
+# ============================================================================
+
 """回测应用入口 - 执行策略回测并生成报告."""
 
 import sys
-import pandas as pd
 from pathlib import Path
 from dotenv import load_dotenv
-
-# 加载环境变量
+import polars as pl
+# 加载环境变量（必须在其他导入之前）
 load_dotenv()
 
 # 获取项目根目录
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+import pandas as pd
+from src.agent.services.stock_pool_service import StockPoolService
+import argparse
+import traceback
 
 from src.backtest.engine import BacktestEngine
 from src.backtest.report import print_backtest_report
@@ -70,23 +82,30 @@ def main(
         logger.info("\n" + "=" * 60)
         logger.info("执行股票池过滤")
         logger.info("=" * 60)
-        from src.agent.services.stock_pool_service import StockPoolService
         stock_pool_service = StockPoolService(settings)
         
-        # MultiIndex 需要提取 ts_code 列表
-        if hasattr(engine.data, 'index') and isinstance(engine.data.index, pd.MultiIndex):
-            raw_codes = engine.data.index.get_level_values('ts_code').unique().tolist()
-        else:
-            raw_codes = engine.data['ts_code'].unique().tolist()
-        
-        filtered_data, filtered_codes = stock_pool_service.apply_filter(
-            engine.data, 
-            raw_codes
+        # 应用股票池过滤（注意：apply_filter 返回三个值，包括指数数据）
+        filtered_data, filtered_codes, index_data = stock_pool_service.apply_filter(
+            engine.data
         )
         logger.info(f"✅ 股票池过滤完成：{len(filtered_codes)} 只股票")
         
-        # 更新引擎的过滤后数据
+        # 检查并记录指数数据
+        if index_data is not None and hasattr(index_data, 'is_empty') and not index_data.is_empty():
+            logger.info(f"✅ 从 StockPoolService 获取指数数据: {len(index_data)} 条记录")
+            logger.debug(f"   指数数据列: {list(index_data.columns)}")
+        else:
+            logger.warning("⚠️ StockPoolService 未返回有效的指数数据")
+            index_data = None
+        
+        # 更新引擎的过滤后数据和指数数据
         engine.data = filtered_data
+        engine.index_data = index_data
+        
+        if index_data is not None and hasattr(index_data, 'columns'):
+            logger.info(f"✅ engine.index_data 已设置: {len(index_data)} 条记录, 列: {list(index_data.columns)}")
+        else:
+            logger.warning("⚠️ engine.index_data 为 None 或无效")
         
         # 执行策略
         results = engine.run_directory(actual_scripts_dir)
@@ -108,7 +127,6 @@ def main(
         
     except Exception as e:
         logger.exception(f"❌ 回测失败：{e}")
-        import traceback
         traceback.print_exc()
     
     print("\n" + "=" * 60)
@@ -118,7 +136,6 @@ def main(
 
 def cli():
     """命令行入口"""
-    import argparse
     
     parser = argparse.ArgumentParser(description='执行策略回测')
     parser.add_argument('--dir', type=str, default=None, 

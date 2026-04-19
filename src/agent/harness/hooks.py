@@ -1,5 +1,7 @@
 """Hooks 执行器 - PreToolUse/PostToolUse/Stop 钩子系统.
 
+import os
+import re
 - Exit code 协议：0=通过, 1=警告继续, 2=阻止执行
 - 支持命令型 hooks（外部脚本）
 - 匹配器模式（根据工具名称触发不同 hooks）
@@ -7,7 +9,7 @@
 """
 
 from __future__ import annotations
-
+import os
 import json
 import logging
 import re
@@ -214,7 +216,6 @@ class HookExecutor:
         
         if "*" in pattern:
             # 转换为正则表达式
-            import re
             regex_pattern = pattern.replace("*", ".*")
             return bool(re.match(f"^{regex_pattern}$", tool_name))
         
@@ -307,8 +308,6 @@ class HookExecutor:
 
     def _expand_env_vars(self, command: str) -> str:
         """展开命令中的环境变量."""
-        import os
-        import re
 
         def replace_var(match: re.Match) -> str:
             var_expr = match.group(1)
@@ -322,7 +321,6 @@ class HookExecutor:
 
     def _get_env_with_config_dir(self) -> dict[str, str]:
         """获取包含 CONFIG_DIR 的环境变量."""
-        import os
         env = os.environ.copy()
         env.setdefault("STOCK_ASKING_CONFIG_DIR", str(self.config_dir))
         return env

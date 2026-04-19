@@ -242,13 +242,19 @@ if __name__ == "__main__":
 
 #### 3.2 Rules Loader（规则引擎）
 
-从 Markdown 文件加载业务规则并注入到 system prompt。
+从 Markdown 文件加载**强制性约束规则**并注入到 system prompt。
 
 **规则文件位置**：`.stock_asking/rules/*.md`
 
 **示例规则**：
 - `data-quality.md`：数据质量规则（禁止未来函数、停牌过滤等）
-- `risk-control.md`：风险控制规则（行业集中度、极端值过滤等）
+- `expression-design.md`：表达式设计规范（禁止硬编码阈值、变量命名规范等）
+- `quality-criteria.md`：质量评估标准（候选数量区间、行业分散度、回测指标等）
+
+**重要说明**：
+- Rules 是**全局强制约束**，无条件注入到所有 Agent 的 system prompt
+- 适用于必须遵守的硬性规则（如“禁止使用未来数据”）
+- **不适用于**指导性知识（如质量标准、重试策略），这类内容应放在 Skills 中
 
 **加载流程**：
 
@@ -315,22 +321,39 @@ else:
 
 #### 4.1 Quality Evaluator（质量评估器）
 
-对 Agent 输出进行多维度评分。
+对 Agent 输出进行多维度评分，从 `.stock_asking/rules/quality-criteria.md` 动态加载评估标准。
+
+**核心设计**：
+- **技术性评估**：QualityEvaluator 只做基础技术检查（候选数量是否为0、行业多样性计算等）
+- **规则动态加载**：评估标准从 `quality-criteria.md` 加载，返回给 Agent 参考
+- **Agent 自主决策**：Agent 根据返回的 quality_criteria 自行判断和调整策略
 
 **评估维度**：
-- **结果完整性**：是否包含必需字段
-- **数量合理性**：筛选结果数量是否在合理范围
-- **逻辑一致性**：筛选条件与用户需求是否匹配
-- **数据有效性**：是否存在异常值或缺失
+- **候选数量**：基本检查（0个=失败），具体标准由 quality-criteria.md 定义
+- **行业多样性**：计算熵值评估行业分布均匀度
+- **回测指标**：夏普比率、最大回撤、胜率等技术指标
+- **代码规范性**：导入完整性、注释覆盖率、异常处理
+
+**工作流程**：
+```
+1. QualityEvaluator 初始化时加载 quality-criteria.md
+2. 执行技术性评估，计算基础分数
+3. 返回评估结果 + quality_criteria 原始内容
+4. Agent 根据 quality_criteria 自主调整策略
+```
 
 **输出示例**：
 
 ```python
 {
-    "score": 0.85,
-    "issues": ["结果数量过少"],
+    "quality_score": 0.85,
+    "issues": ["候选数量过少"],
     "suggestions": ["放宽成交量阈值"],
-    "should_retry": True
+    "should_retry": True,
+    "candidate_count": 3,
+    "metrics": {
+        "industry_diversity_score": 0.72
+    }
 }
 ```
 
@@ -339,15 +362,16 @@ else:
 ```python
 from src.agent.quality import ScreeningQualityEvaluator
 
-evaluator = ScreeningQualityEvaluator(rules_dir="app/setting/rules")
+# 不再需要 rules_dir 参数
+evaluator = ScreeningQualityEvaluator()
 
 # 评估结果质量
 quality = evaluator.evaluate(
     query="帮我找放量突破的股票",
-    result={"stocks": [...], "logic": {...}}
+    result={"candidates": [...], "script_code": "..."}
 )
 
-print(f"质量评分: {quality['score']}")
+print(f"质量评分: {quality['quality_score']}")
 print(f"问题: {quality['issues']}")
 print(f"建议: {quality['suggestions']}")
 ```

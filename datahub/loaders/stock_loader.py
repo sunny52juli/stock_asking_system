@@ -4,13 +4,14 @@
 """
 
 from __future__ import annotations
-
+import polars as pl
 from datetime import datetime, timedelta
-
-import pandas as pd
 
 from datahub.entries import Calendar, Stock
 from datahub.loaders.base import BaseDataLoader
+from datahub.calendar_utils import get_data_start_date
+from infrastructure.logging.logger import  get_logger
+logger = get_logger(__name__)
 
 
 def _get_stock_pool_from_datahub(
@@ -36,29 +37,30 @@ def _get_stock_pool_from_datahub(
     if trade_date is None:
         raise ValueError("trade_date 参数必须显式传入，禁止使用 latest_date() 获取未来日期")
     basic = stock.universe()
-    if basic is None or basic.empty:
+    if basic.is_empty():
         return []
     if "ts_code" not in basic.columns:
         return []
     if index_code:
         members = stock.universe_by_index(index_code, date=trade_date)
-        if members is None or members.empty:
+        if members.is_empty():
             return []
         code_col = "con_code" if "con_code" in members.columns else "ts_code"
-        stock_list = members[code_col].astype(str).unique().tolist()
-        basic = basic[basic["ts_code"].isin(stock_list)]
+        stock_list = members[code_col].cast(pl.String).unique().to_list()
+        basic = basic.filter(pl.col("ts_code").is_in(stock_list))
     else:
-        stock_list = basic["ts_code"].astype(str).tolist()
+        stock_list = basic["ts_code"].cast(pl.String).to_list()
     if exclude_st or min_list_days > 0:
         if "list_date" in basic.columns:
-            basic = basic.copy()
-            basic["list_date"] = pd.to_datetime(basic["list_date"], errors="coerce")
-            ref = pd.Timestamp(trade_date[:4] + "-" + trade_date[4:6] + "-" + trade_date[6:8])
-            basic["list_days"] = (ref - basic["list_date"]).dt.days
-            basic = basic[basic["list_days"] >= min_list_days]
+            ref_date = pl.lit(trade_date).str.strptime(pl.Date, "%Y%m%d")
+            list_date_parsed = pl.col("list_date").str.strptime(pl.Date, "%Y%m%d", strict=False)
+            basic = basic.with_columns(
+                ((ref_date - list_date_parsed).dt.total_days()).alias("list_days")
+            )
+            basic = basic.filter(pl.col("list_days") >= min_list_days)
         if exclude_st and "name" in basic.columns:
-            basic = basic[~basic["name"].astype(str).str.contains("ST", na=False)]
-    return basic["ts_code"].astype(str).unique().tolist()
+            basic = basic.filter(~pl.col("name").cast(pl.String).str.contains("ST"))
+    return basic["ts_code"].cast(pl.String).unique().to_list()
 
 
 class StockDataLoader(BaseDataLoader):
@@ -83,10 +85,10 @@ class StockDataLoader(BaseDataLoader):
         self._calendar = calendar or Calendar()
         self._available_industries: list[str] | None = None
 
-    def load_data(self, **kwargs: object) -> pd.DataFrame:
+    def load_data(self, **kwargs: object) -> "pl.DataFrame":
         return self.load_market_data(**kwargs)
 
-    def load_market_data(self, force_reload: bool = False, trade_date_for_pool: str | None = None, start_date: str | None = None, end_date: str | None = None, observation_days: int | None = None) -> pd.DataFrame:
+    def load_market_data(self, force_reload: bool = False, trade_date_for_pool: str | None = None, start_date: str | None = None, end_date: str | None = None, observation_days: int | None = None) -> "pl.DataFrame":
         """Load market data.
         
         Args:
@@ -130,24 +132,18 @@ class StockDataLoader(BaseDataLoader):
         print(f"📊 加载数据：{start_date} ~ {end_date}")
         df = self._stock.price(start_date=start_date, end_date=end_date)
         
-        if df is None or df.empty:
+        if df.is_empty():
             raise ValueError(f"无法获取市场数据 ({start_date}~{end_date})")
         
         # 过滤到股票池
-        df = df[df["ts_code"].isin(self._stock_pool)].copy()
+        df = df.filter(pl.col("ts_code").is_in(self._stock_pool))
         
-        # 补充行业信息
-        df = self._supplement_industry(df)
-        
-        # 设置 MultiIndex (trade_date, ts_code)
+        # 设置索引 (trade_date, ts_code) - polars 使用 sort + 保持列顺序
         if "trade_date" in df.columns:
-            df = df.copy()
-            df["trade_date"] = pd.to_datetime(df["trade_date"])
-            df = df.sort_values(["trade_date", "ts_code"])
-            df = df.set_index(["trade_date", "ts_code"])
+            df = df.sort(["trade_date", "ts_code"])
         
         self._data = df
-        print(f"✅ 已加载市场数据：{len(df)} 条记录")
+        print(f"✅ 已加载市场数据：{df.height} 条记录")
         return df
 
 
@@ -167,7 +163,6 @@ class StockDataLoader(BaseDataLoader):
             pass
         
         # 备用方案：使用当前日期
-        from datetime import datetime
         return datetime.now().strftime("%Y%m%d")
     
     def _calculate_default_dates(self, reference_date: str, observation_days: int | None = None) -> tuple[str, str]:
@@ -180,7 +175,6 @@ class StockDataLoader(BaseDataLoader):
         Returns:
             (start_date, end_date) 元组
         """
-        from utils.screening.screening_tools import get_data_start_date
         
         try:
             end_dt = datetime.strptime(reference_date, "%Y%m%d")
@@ -195,14 +189,6 @@ class StockDataLoader(BaseDataLoader):
         
         return start_date, end_date
 
-    def _supplement_industry(self, data: pd.DataFrame) -> pd.DataFrame:
-        if "industry" in data.columns:
-            return data
-        basic = self._stock.universe()
-        if basic is not None and not basic.empty and "industry" in basic.columns:
-            info = basic[["ts_code", "industry"]].drop_duplicates("ts_code")
-            data = data.merge(info, on="ts_code", how="left")
-        return data
 
     def get_available_industries(self) -> list[str]:
         if self._available_industries is not None:
@@ -211,15 +197,15 @@ class StockDataLoader(BaseDataLoader):
             self.load_market_data()
         return self._available_industries or []
 
-    def get_latest_date(self) -> datetime | None:
+    def get_latest_date(self) -> str | None:
         if self._data is None:
             return None
-        return self._data.index.get_level_values("trade_date").max()
+        return self._data.select(pl.col("trade_date").max())[0, 0]
 
     def get_stock_codes(self) -> list[str]:
         if self._data is None:
             return []
-        return self._data.index.get_level_values("ts_code").unique().tolist()
+        return self._data.select(pl.col("ts_code").unique()).to_series().to_list()
 
 
 def create_stock_data_loader(
@@ -234,7 +220,7 @@ def create_stock_data_loader(
     )
 
 
-def get_available_industries(data: pd.DataFrame | None = None) -> list[str]:
+def get_available_industries(data: "pl.DataFrame | None" = None) -> list[str]:
     """获取可用的行业列表
     
     Args:
@@ -247,10 +233,7 @@ def get_available_industries(data: pd.DataFrame | None = None) -> list[str]:
         # 从提供的 DataFrame 中提取
         if "industry" not in data.columns:
             return []
-        if isinstance(data.index, pd.MultiIndex):
-            industries = data.reset_index()["industry"].dropna().unique()
-        else:
-            industries = data["industry"].dropna().unique()
+        industries = data.select(pl.col("industry").drop_nulls().unique()).to_series().to_list()
         return sorted([str(i) for i in industries if str(i).strip()])
     
     # 从数据源加载
@@ -259,18 +242,17 @@ def get_available_industries(data: pd.DataFrame | None = None) -> list[str]:
     return loader.get_available_industries()
 
 
-def load_latest_market_data(recent_days: int = 60) -> pd.DataFrame:
+def load_latest_market_data(recent_days: int = 60) -> "pl.DataFrame":
     """加载最近交易日的市场数据。
     
-    自动从数据源拉取最新 N 天的数据，包含行业信息和 MultiIndex。
+    自动从数据源拉取最新 N 天的数据，包含行业信息。
     
     Args:
         recent_days: 拉取最近多少天的数据，默认 60 天
         
     Returns:
-        DataFrame with MultiIndex (trade_date, ts_code)
+        Polars DataFrame (sorted by trade_date, ts_code)
     """
-    from datetime import datetime, timedelta
     
     # 计算日期范围
     today = datetime.now().strftime("%Y%m%d")
@@ -289,7 +271,7 @@ def load_raw_market_data(
     end_date: str,
     exclude_st: bool = False,
     min_list_days: int = 0,
-) -> pd.DataFrame:
+) -> "pl.DataFrame":
     """加载原始市场数据（不进行股票池过滤）。
     
     用于 screener 和 backtest 的初始数据加载，后续由 StockPoolService 进行过滤。
@@ -301,7 +283,7 @@ def load_raw_market_data(
         min_list_days: 最小上市天数，默认 0（不限制）
         
     Returns:
-        DataFrame with MultiIndex (trade_date, ts_code)，包含行业信息
+        Polars DataFrame (sorted by trade_date, ts_code)，包含行业信息
     """
     loader = StockDataLoader(
         exclude_st=exclude_st,

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import re
 import time as _time
+from datetime import datetime
 from typing import Any
-
-import numpy as np
-import pandas as pd
+import polars as pl
+import math
 
 from infrastructure.logging.logger import get_logger
-
+from src.screening.expression_evaluator import ExpressionEvaluator
+from src.screening.mcp_tool_runner import ToolExecutor
+from src.screening.namespace_builder import NamespaceBuilder
 logger = get_logger(__name__)
 
 
@@ -17,10 +20,10 @@ class NamespaceBuilder:
     """命名空间构建器 - 管理工具计算的中间变量."""
 
     @staticmethod
-    def build_namespace(data: pd.DataFrame) -> dict:
+    def build_namespace(data: pl.DataFrame) -> dict:
         """从数据构建初始命名空间."""
         namespace = {}
-        # 添加基础数据列
+        # 添加基础数据列（polars Series）
         for col in data.columns:
             namespace[col] = data[col]
         return namespace
@@ -35,8 +38,6 @@ class NamespaceBuilder:
         Returns:
             变量名集合
         """
-        import ast
-        import re
         
         # 简单提取：匹配标识符
         identifiers = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', expression)
@@ -61,16 +62,19 @@ class BatchCalculator:
     4. 置信度计算和结果构建
     """
 
-    def __init__(self, data: pd.DataFrame, latest_date: pd.Timestamp):
+    def __init__(self, data: pl.DataFrame, latest_date: str, index_data: pl.DataFrame | None = None):
         """初始化批量计算器.
         
         Args:
-            data: 市场数据 DataFrame
-            latest_date: 最新交易日
+            data: 市场数据 DataFrame (columns: ts_code, trade_date, ...)
+            latest_date: 最新交易日 (YYYYMMDD 字符串)
+            index_data: 指数数据 DataFrame (columns: trade_date, index_close)，可选
         """
         self.data = data
         self.latest_date = latest_date
+        self.index_data = index_data
         self.namespace_builder = NamespaceBuilder()
+        self.tool_executor = ToolExecutor(index_data=index_data)
 
     def batch_screen(
         self,
@@ -93,13 +97,8 @@ class BatchCalculator:
         confidence_formula = screening_logic.get("confidence_formula", "1.0")
         rationale = screening_logic.get("rationale", "")
         
-        from src.screening.prefilter import PRE_FILTER_TOOLS
-        main_tools = [t for t in tools if t.get("tool") not in PRE_FILTER_TOOLS]
-        pre_filter_vars = {
-            t.get("var"): True
-            for t in tools
-            if t.get("tool") in PRE_FILTER_TOOLS and t.get("var")
-        }
+        main_tools = tools
+        pre_filter_vars = {}
         
         expression_vars = NamespaceBuilder.extract_variables(expression) if expression else set()
         
@@ -118,7 +117,7 @@ class BatchCalculator:
             return []
         
         # 执行主工具
-        namespace, tool_error_count = self._execute_main_tools(
+        namespace, tool_error_count = self.tool_executor.execute_tools(
             valid_data, main_tools, pre_filter_vars
         )
         
@@ -126,7 +125,7 @@ class BatchCalculator:
         latest_namespace = self._extract_latest_cross_section(namespace, valid_data)
         
         # 向量化表达式评估
-        matched_stocks, eval_stats = self._vectorized_expression_eval(
+        matched_stocks, eval_stats = ExpressionEvaluator.evaluate_expression(
             expression, expression_vars, latest_namespace, valid_stocks
         )
         
@@ -154,31 +153,54 @@ class BatchCalculator:
 
     def _filter_valid_stocks(
         self, stock_codes: list[str]
-    ) -> tuple[list[str], pd.DataFrame, dict[str, int]]:
+    ) -> tuple[list[str], pl.DataFrame, dict[str, int]]:
         """过滤出有效股票（有足够数据且包含最新日期）."""
-        all_ts_codes = self.data.index.get_level_values("ts_code")
-        subset_data = self.data[all_ts_codes.isin(stock_codes)]
+        # Polars: 使用 filter 和 is_in
+        subset_data = self.data.filter(pl.col("ts_code").is_in(stock_codes))
         
-        if len(subset_data) == 0:
+        if subset_data.is_empty():
             logger.warning("   ⚠️ 子集数据为空")
             return [], subset_data, {"data_insufficient": 0, "no_latest": 0}
         
-        # 检查数据充足性
-        stock_day_counts = subset_data.groupby(level="ts_code").size()
-        sufficient_stocks = stock_day_counts[stock_day_counts >= 20].index
+        # 检查数据充足性：每只股票的交易天数 >= 20
+        stock_day_counts = subset_data.group_by("ts_code").agg(
+            pl.count().alias("day_count")
+        )
+        sufficient_stocks_df = stock_day_counts.filter(pl.col("day_count") >= 20)
+        sufficient_stocks = sufficient_stocks_df["ts_code"].to_list()
         data_insufficient_count = len(stock_day_counts) - len(sufficient_stocks)
         
         # 检查是否包含最新日期
-        try:
-            latest_date_data = subset_data.xs(self.latest_date, level="trade_date")
-            stocks_with_latest = set(latest_date_data.index)
-        except KeyError:
+        # Polars: trade_date 可能是 date/datetime 类型，需要转换后比较
+        latest_date_str = str(self.latest_date)
+        
+        # 统一日期格式：提取 YYYYMMDD 部分
+        # 可能的格式："2026-04-17 00:00:00", "20260417", "2026-04-17"
+        date_match = re.search(r'(\d{4})[-/]?(\d{2})[-/]?(\d{2})', latest_date_str)
+        if date_match:
+            normalized_date = f"{date_match.group(1)}{date_match.group(2)}{date_match.group(3)}"
+        else:
+            normalized_date = latest_date_str
+        
+        if subset_data.schema["trade_date"] in [pl.Date, pl.Datetime]:
+            # 将字符串转换为日期后比较
+            try:
+                latest_date_val = datetime.strptime(normalized_date, "%Y%m%d").date()
+                latest_date_data = subset_data.filter(pl.col("trade_date") == latest_date_val)
+            except Exception as e:
+                logger.warning(f"   ⚠️ 日期转换失败：{e}，尝试直接比较")
+                latest_date_data = subset_data.filter(pl.col("trade_date") == normalized_date)
+        else:
+            # trade_date 已经是字符串或整数
+            latest_date_data = subset_data.filter(pl.col("trade_date") == normalized_date)
+        if latest_date_data.is_empty():
             logger.error(f"   ⚠️ 数据中不存在分析日期 {self.latest_date}")
             return [], subset_data, {
                 "data_insufficient": data_insufficient_count,
                 "no_latest": 0
             }
         
+        stocks_with_latest = set(latest_date_data["ts_code"].to_list())
         valid_stocks = [s for s in sufficient_stocks if s in stocks_with_latest]
         no_latest_count = len(sufficient_stocks) - len(valid_stocks)
         
@@ -199,8 +221,8 @@ class BatchCalculator:
                 },
             )
         
-        valid_ts_codes = subset_data.index.get_level_values("ts_code")
-        valid_data = subset_data[valid_ts_codes.isin(valid_stocks)]
+        # 过滤出有效股票的数据
+        valid_data = subset_data.filter(pl.col("ts_code").is_in(valid_stocks))
         
         return (
             valid_stocks,
@@ -211,119 +233,13 @@ class BatchCalculator:
             },
         )
 
-    def _execute_main_tools(
-        self,
-        valid_data: pd.DataFrame,
-        main_tools: list[dict],
-        pre_filter_vars: dict[str, bool]
-    ) -> tuple[dict, int]:
-        """执行主工具列表."""
-        from src.agent.tools.bridge import execute_tool_impl
-        
-        namespace = self.namespace_builder.build_namespace(valid_data)
-        namespace.update(pre_filter_vars)
-        tool_error_count = 0
-        
-        logger.info(f"   📦 执行 {len(main_tools)} 个主工具...")
-        for i, tool_step in enumerate(main_tools, 1):
-            tool_name = tool_step.get("name") or tool_step.get("tool")
-            params = tool_step.get("params", {})
-            var_name = tool_step.get("var")
-            
-            if not tool_name or not var_name:
-                logger.warning(f"      ⚠️ 工具步骤 {i}: 缺少必要字段")
-                continue
-            
-            try:
-                result = execute_tool_impl(
-                    tool_name=tool_name,
-                    data=valid_data,
-                    params=params,
-                    computed_vars=namespace
-                )
-                namespace[var_name] = result
-                logger.info(f"      [{i}/{len(main_tools)}] ✅ {tool_name} → {var_name}")
-            except Exception as e:
-                tool_error_count += 1
-                logger.error(f"      [{i}/{len(main_tools)}] ❌ {tool_name} → {var_name} 失败：{e}")
-                namespace[var_name] = pd.Series(np.nan, index=valid_data.index)
-        
-        logger.info(
-            f"   ✅ 工具执行完成，成功：{len(main_tools) - tool_error_count}, "
-            f"失败：{tool_error_count}"
-        )
-        return namespace, tool_error_count
-
-    def _vectorized_expression_eval(
-        self,
-        expression: str,
-        expression_vars: set[str],
-        latest_namespace: dict,
-        valid_stocks: list[str],
-    ) -> tuple[list[str], dict[str, int]]:
-        """向量化评估筛选表达式."""
-        stats = {
-            "false_count": 0,
-            "nan_count": 0,
-            "eval_error_count": 0
-        }
-        stock_index = latest_namespace.get("_stock_index", pd.Index(valid_stocks))
-        
-        if not expression or not expression.strip():
-            logger.warning(f"   ⚠️ 表达式为空，返回全部股票")
-            return valid_stocks, stats
-        
-        # 确保所有表达式变量都在 namespace 中
-        for var in expression_vars:
-            if var not in latest_namespace:
-                latest_namespace[var] = pd.Series(np.nan, index=stock_index)
-        
-        try:
-            var_series = [
-                latest_namespace[v]
-                for v in expression_vars
-                if v in latest_namespace and isinstance(latest_namespace[v], pd.Series)
-            ]
-            
-            if var_series:
-                nan_mask = (
-                    pd.concat(var_series, axis=1)
-                    .isna()
-                    .any(axis=1)
-                    .reindex(stock_index, fill_value=False)
-                )
-            else:
-                nan_mask = pd.Series(False, index=stock_index)
-            
-            stats["nan_count"] = int(nan_mask.sum())
-            
-            # 评估表达式
-            match_result = eval(expression, {"__builtins__": {}}, latest_namespace)
-            
-            if isinstance(match_result, pd.Series):
-                match_result = match_result.where(~nan_mask, False).fillna(False).astype(bool)
-                stats["false_count"] = max(0, int((~match_result).sum()) - stats["nan_count"])
-                matched_stocks = match_result[match_result].index.tolist()
-            elif isinstance(match_result, (bool, np.bool_)):
-                matched_stocks = valid_stocks if match_result else []
-                stats["false_count"] = 0 if match_result else len(valid_stocks)
-            else:
-                matched_stocks = valid_stocks if match_result else []
-            
-        except Exception as e:
-            stats["eval_error_count"] = 1
-            logger.error(f"   ⚠️ 向量化表达式评估失败：{e}")
-            matched_stocks = []
-        
-        return matched_stocks, stats
-
     def _build_candidates(
         self,
         matched_stocks: list[str],
         confidence_formula: str,
         latest_namespace: dict,
         expression_vars: set[str],
-        valid_data: pd.DataFrame,
+        valid_data: pl.DataFrame,
         valid_stocks: list[str],
         rationale: str,
     ) -> list[dict[str, Any]]:
@@ -332,70 +248,43 @@ class BatchCalculator:
             return []
         
         # 计算置信度
-        conf_vars = NamespaceBuilder.extract_variables(confidence_formula)
-        for var in conf_vars:
-            if var not in latest_namespace:
-                stock_index = latest_namespace.get("_stock_index", pd.Index(valid_stocks))
-                latest_namespace[var] = pd.Series(np.nan, index=stock_index)
-        
-        try:
-            conf_raw = eval(confidence_formula, {"__builtins__": {}}, latest_namespace)
-            if isinstance(conf_raw, pd.Series):
-                confidence_series = 1.0 / (1.0 + np.exp(-conf_raw))
-            elif isinstance(conf_raw, (int, float)):
-                confidence_series = pd.Series(
-                    1.0 / (1.0 + np.exp(-conf_raw)),
-                    index=pd.Index(valid_stocks)
-                )
-            else:
-                confidence_series = pd.Series(0.5, index=pd.Index(valid_stocks))
-        except Exception as e:
-            logger.warning(f"   ⚠️ 置信度批量计算失败：{e}，使用默认值 0.5")
-            confidence_series = pd.Series(0.5, index=pd.Index(valid_stocks))
+        confidence_values = ExpressionEvaluator.calculate_confidence(
+            confidence_formula, latest_namespace, valid_stocks
+        )
         
         # 批量获取股票名称和行业
         name_map = self._get_stock_names_batch(valid_data, matched_stocks)
         industry_map = self._get_stock_industries_batch(valid_data, matched_stocks)
         
         # 提取指标数据
-        metrics_dict: dict[str, pd.Series] = {}
+        metrics_dict: dict[str, list[float]] = {}
         for var in expression_vars:
             val = latest_namespace.get(var)
-            if isinstance(val, pd.Series):
-                metrics_dict[var] = val
-            elif isinstance(val, (int, float, np.number)):
-                metrics_dict[var] = pd.Series(float(val), index=pd.Index(matched_stocks))
-        
-        metrics_df = (
-            pd.DataFrame(metrics_dict).reindex(matched_stocks)
-            if metrics_dict
-            else pd.DataFrame(index=matched_stocks)
-        )
+            if isinstance(val, pl.Series):
+                # 只取 matched_stocks 对应的值
+                metrics_dict[var] = val.to_list()
+            elif isinstance(val, (int, float)):
+                metrics_dict[var] = [float(val)] * len(matched_stocks)
         
         # 构建候选列表
         candidates = []
-        for ts_code in matched_stocks:
-            try:
-                conf = (
-                    float(confidence_series.loc[ts_code])
-                    if ts_code in confidence_series.index
-                    else 0.5
-                )
-            except (KeyError, TypeError):
-                conf = 0.5
+        for idx, ts_code in enumerate(matched_stocks):
+            conf = confidence_values[idx] if idx < len(confidence_values) else 0.5
             
-            if pd.isna(conf):
+            # 使用 math.isnan 检查 NaN
+            if isinstance(conf, float) and math.isnan(conf):
                 conf = 0.5
             
             # 提取该股票的指标
             metrics = {}
-            if ts_code in metrics_df.index:
-                row = metrics_df.loc[ts_code]
-                metrics = {
-                    k: float(v)
-                    for k, v in row.items()
-                    if pd.notna(v) and isinstance(v, (int, float, np.number))
-                }
+            for var, values in metrics_dict.items():
+                if idx < len(values):
+                    val = values[idx]
+                    # 只添加非 NaN 值
+                    if isinstance(val, float) and not math.isnan(val):
+                        metrics[var] = float(val)
+                    elif not isinstance(val, float):
+                        metrics[var] = float(val)
             
             candidates.append({
                 "ts_code": ts_code,
@@ -409,16 +298,36 @@ class BatchCalculator:
         return candidates
 
     def _extract_latest_cross_section(
-        self, namespace: dict, valid_data: pd.DataFrame
+        self, namespace: dict, valid_data: pl.DataFrame
     ) -> dict:
         """提取最新日期的截面数据."""
         latest_namespace = {}
-        try:
-            latest_slice = valid_data.xs(self.latest_date, level="trade_date")
-            stock_index = latest_slice.index
-        except KeyError:
+        
+        # 过滤最新日期的数据
+        latest_date_str = str(self.latest_date)
+        
+        # 统一日期格式：提取 YYYYMMDD 部分
+        date_match = re.search(r'(\d{4})[-/]?(\d{2})[-/]?(\d{2})', latest_date_str)
+        if date_match:
+            normalized_date = f"{date_match.group(1)}{date_match.group(2)}{date_match.group(3)}"
+        else:
+            normalized_date = latest_date_str
+        
+        if valid_data.schema["trade_date"] in [pl.Date, pl.Datetime]:
+            # 将字符串转换为日期后比较
+            try:
+                latest_date_val = datetime.strptime(normalized_date, "%Y%m%d").date()
+                latest_slice = valid_data.filter(pl.col("trade_date") == latest_date_val)
+            except Exception:
+                latest_slice = valid_data.filter(pl.col("trade_date") == normalized_date)
+        else:
+            latest_slice = valid_data.filter(pl.col("trade_date") == normalized_date)
+        
+        if latest_slice.is_empty():
+            logger.warning(f"   ⚠️ 无法找到最新日期 {normalized_date} 的数据")
             return latest_namespace
         
+        stock_index = latest_slice["ts_code"].to_list()
         latest_namespace["_stock_index"] = stock_index
         
         for key, value in namespace.items():
@@ -426,27 +335,46 @@ class BatchCalculator:
             if callable(value):
                 continue
             
-            if isinstance(value, pd.Series):
-                if isinstance(value.index, pd.MultiIndex):
-                    try:
-                        cross_section = value.xs(self.latest_date, level="trade_date")
-                        latest_namespace[key] = cross_section.reindex(stock_index)
-                    except KeyError:
-                        latest_namespace[key] = pd.Series(np.nan, index=stock_index)
-                elif value.index.equals(valid_data.index):
-                    try:
-                        mask = valid_data.index.get_level_values("trade_date") == self.latest_date
-                        sliced = value[mask]
-                        sliced.index = stock_index
-                        latest_namespace[key] = sliced
-                    except Exception:
-                        latest_namespace[key] = pd.Series(np.nan, index=stock_index)
+            if isinstance(value, pl.DataFrame):
+                # Polars DataFrame: 提取最新日期的列
+                if "trade_date" in value.columns and "ts_code" in value.columns:
+                    # 有时间序列数据：过滤最新日期（使用标准化后的日期）
+                    if value.schema["trade_date"] in [pl.Date, pl.Datetime]:
+                        try:
+                            latest_date_val = datetime.strptime(normalized_date, "%Y%m%d").date()
+                            latest_mask = value["trade_date"] == latest_date_val
+                        except Exception:
+                            latest_mask = value["trade_date"] == normalized_date
+                    else:
+                        latest_mask = value["trade_date"] == normalized_date
+                    
+                    latest_df = value.filter(latest_mask)
+                    
+                    # 提取所有非索引列作为 Series（使用原始列名）
+                    for col in latest_df.columns:
+                        if col not in ["trade_date", "ts_code"]:
+                            latest_namespace[col] = latest_df[col]
+                elif "ts_code" in value.columns and "trade_date" not in value.columns:
+                    # 已经是截面数据（如 beta, alpha 等聚合指标），直接使用
+                    # 这类 DataFrame 只有 ts_code 和计算结果列
+                    for col in value.columns:
+                        if col != "ts_code":
+                            latest_namespace[col] = value[col]
                 else:
-                    latest_namespace[key] = (
-                        value.reindex(stock_index)
-                        if hasattr(value, "reindex")
-                        else value
-                    )
+                    # 既没有 trade_date 也没有 ts_code，跳过
+                    logger.warning(f"   ⚠️ DataFrame {key} 缺少必要列 (ts_code)，跳过")
+            
+            elif isinstance(value, pl.Series):
+                # Polars Series: 需要与 valid_data 对齐
+                if len(value) == len(valid_data):
+                    # 假设 value 的顺序与 valid_data 一致
+                    mask = valid_data["trade_date"] == normalized_date
+                    sliced = value.filter(mask)
+                    latest_namespace[key] = sliced
+                else:
+                    # 直接使用该 Series
+                    logger.warning(f"   ⚠️ Series {key} 长度不匹配: {len(value)} vs {len(valid_data)}")
+                    latest_namespace[key] = value
             else:
                 latest_namespace[key] = value
         
@@ -454,16 +382,18 @@ class BatchCalculator:
 
     @staticmethod
     def _get_stock_names_batch(
-        data: pd.DataFrame, stock_codes: list[str]
+        data: pl.DataFrame, stock_codes: list[str]
     ) -> dict[str, str]:
         """批量获取股票名称."""
         if "name" not in data.columns:
             return {code: code for code in stock_codes}
         
         try:
-            names = data.groupby(level="ts_code")["name"].first()
+            # Polars: group_by 并取第一个 name
+            names_df = data.group_by("ts_code").agg(pl.col("name").first())
+            names_dict = dict(zip(names_df["ts_code"], names_df["name"]))
             return {
-                code: str(names.loc[code]) if code in names.index else code
+                code: str(names_dict[code]) if code in names_dict else code
                 for code in stock_codes
             }
         except Exception:
@@ -471,18 +401,20 @@ class BatchCalculator:
     
     @staticmethod
     def _get_stock_industries_batch(
-        data: pd.DataFrame, stock_codes: list[str]
+        data: pl.DataFrame, stock_codes: list[str]
     ) -> dict[str, str]:
         """批量获取股票行业信息."""
         if "industry" not in data.columns:
             return {code: "N/A" for code in stock_codes}
         
         try:
-            industries = data.groupby(level="ts_code")["industry"].first()
+            # Polars: group_by 并取第一个 industry
+            industries_df = data.group_by("ts_code").agg(pl.col("industry").first())
+            industries_dict = dict(zip(industries_df["ts_code"], industries_df["industry"]))
             return {
                 code: (
-                    str(industries.loc[code])
-                    if code in industries.index and pd.notna(industries.loc[code])
+                    str(industries_dict[code])
+                    if code in industries_dict and industries_dict[code] is not None
                     else "N/A"
                 )
                 for code in stock_codes

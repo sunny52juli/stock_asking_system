@@ -2,16 +2,31 @@
 
 import pytest
 import pandas as pd
+import polars as pl
+import numpy as np
+import importlib
 from pathlib import Path
+from datetime import datetime
 from unittest.mock import Mock, MagicMock, patch
 
-
+import datahub
+from datahub.core.dataset import Dataset
+from datahub.data_fields import FIELD_MAPPING, FIELD_DESCRIPTIONS
+from datahub.loaders.base import BaseDataLoader, DataLoaderMixin
+from datahub.loaders.factor_loader import FactorDataLoader
+from datahub.loaders.stock_loader import (
+    StockDataLoader,
+    _get_stock_pool_from_datahub,
+    get_available_industries,
+    load_latest_market_data,
+)
+from datahub.registry import stock as stock_registry
+from datahub.registry.stock import DatasetRegistry
 class TestBaseDataLoader:
     """测试 BaseDataLoader 基类功能。"""
     
     def test_set_multi_index_basic(self):
         """测试设置 MultiIndex 基本功能。"""
-        from datahub.loaders.base import BaseDataLoader
         
         # 创建测试数据
         data = pd.DataFrame({
@@ -34,7 +49,6 @@ class TestBaseDataLoader:
     
     def test_set_multi_index_empty(self):
         """测试空 DataFrame 的处理。"""
-        from datahub.loaders.base import BaseDataLoader
         
         class ConcreteLoader(BaseDataLoader):
             def load_data(self, **kwargs):
@@ -47,7 +61,6 @@ class TestBaseDataLoader:
     
     def test_filter_by_stock_pool_with_multiindex(self):
         """测试基于股票池过滤（MultiIndex）。"""
-        from datahub.loaders.base import BaseDataLoader
         
         data = pd.DataFrame({
             'trade_date': pd.to_datetime(['2024-01-01', '2024-01-01']),
@@ -67,7 +80,6 @@ class TestBaseDataLoader:
     
     def test_extract_industries(self):
         """测试提取行业列表。"""
-        from datahub.loaders.base import BaseDataLoader
             
         data = pd.DataFrame({
             'industry': ['银行', '证券', '银行', None, '']
@@ -85,7 +97,6 @@ class TestBaseDataLoader:
         
     def test_extract_industries_from_multiindex(self):
         """测试 MultiIndex DataFrame 提取行业。"""
-        from datahub.loaders.base import BaseDataLoader
             
         data = pd.DataFrame({
             'trade_date': pd.to_datetime(['2024-01-01']),
@@ -104,7 +115,6 @@ class TestBaseDataLoader:
     
     def test_clean_data(self):
         """测试数据清洗功能。"""
-        from datahub.loaders.base import BaseDataLoader
         
         data = pd.DataFrame({
             'open': [10.0, None, 12.0],
@@ -130,7 +140,6 @@ class TestDataLoaderMixin:
     
     def test_set_dataframe_index(self):
         """测试设置 DataFrame 索引。"""
-        from datahub.loaders.base import DataLoaderMixin
         
         data = pd.DataFrame({
             'trade_date': ['20240101', '20240102'],
@@ -145,7 +154,6 @@ class TestDataLoaderMixin:
     
     def test_filter_stocks(self):
         """测试股票过滤功能。"""
-        from datahub.loaders.base import DataLoaderMixin
         
         data = pd.DataFrame({
             'trade_date': pd.to_datetime(['2024-01-01', '2024-01-01']),
@@ -166,7 +174,6 @@ class TestStockDataLoader:
     @patch('datahub.loaders.stock_loader.Calendar')
     def test_init_default(self, mock_calendar, mock_stock):
         """测试默认初始化。"""
-        from datahub.loaders.stock_loader import StockDataLoader
         
         loader = StockDataLoader()
         
@@ -178,8 +185,6 @@ class TestStockDataLoader:
     @patch('datahub.loaders.stock_loader.Calendar')
     def test_get_latest_trade_date_success(self, mock_calendar, mock_stock):
         """测试获取最新交易日期成功场景。"""
-        from datahub.loaders.stock_loader import StockDataLoader
-        from datetime import datetime
         
         # Mock calendar
         mock_cal_instance = Mock()
@@ -195,7 +200,6 @@ class TestStockDataLoader:
     @patch('datahub.loaders.stock_loader.Calendar')
     def test_get_latest_trade_date_fallback(self, mock_calendar, mock_stock):
         """测试获取最新交易日期失败时的备用方案。"""
-        from datahub.loaders.stock_loader import StockDataLoader
         
         # Mock calendar 抛出异常
         mock_cal_instance = Mock()
@@ -205,13 +209,11 @@ class TestStockDataLoader:
         result = loader._get_latest_trade_date()
         
         # 应该返回当前日期
-        from datetime import datetime
         expected = datetime.now().strftime("%Y%m%d")
         assert result == expected
     
     def test_calculate_default_dates(self):
         """测试默认日期计算。"""
-        from datahub.loaders.stock_loader import StockDataLoader
         
         loader = StockDataLoader.__new__(StockDataLoader)
         start, end = loader._calculate_default_dates('20240301')
@@ -226,8 +228,6 @@ class TestStockDataLoader:
     
     def test_calculate_default_dates_invalid_format(self):
         """测试无效日期格式的处理。"""
-        from datahub.loaders.stock_loader import StockDataLoader
-        from datetime import datetime
         
         loader = StockDataLoader.__new__(StockDataLoader)
         start, end = loader._calculate_default_dates('invalid')
@@ -244,7 +244,6 @@ class TestFactorDataLoader:
     @patch('datahub.loaders.factor_loader.Calendar')
     def test_init_default(self, mock_calendar, mock_stock):
         """测试默认初始化。"""
-        from datahub.loaders.factor_loader import FactorDataLoader
         
         loader = FactorDataLoader()
         
@@ -255,7 +254,6 @@ class TestFactorDataLoader:
     @patch('datahub.loaders.factor_loader.Calendar')
     def test_get_stock_pool_requires_trade_date(self, mock_calendar, mock_stock):
         """测试 get_stock_pool 必须传入 trade_date。"""
-        from datahub.loaders.factor_loader import FactorDataLoader
         
         loader = FactorDataLoader()
         
@@ -269,7 +267,6 @@ class TestHelperFunctions:
     @patch('datahub.loaders.stock_loader.Stock')
     def test_get_stock_pool_from_datahub_no_trade_date(self, mock_stock):
         """测试 _get_stock_pool_from_datahub 在没有 trade_date 时抛出异常。"""
-        from datahub.loaders.stock_loader import _get_stock_pool_from_datahub
         
         with pytest.raises(ValueError, match="trade_date.*必须显式传入"):
             _get_stock_pool_from_datahub(mock_stock())
@@ -277,12 +274,10 @@ class TestHelperFunctions:
     @patch('datahub.loaders.stock_loader.Stock')
     def test_get_stock_pool_from_datahub_with_universe(self, mock_stock):
         """测试 _get_stock_pool_from_datahub 正常获取股票池。"""
-        from datahub.loaders.stock_loader import _get_stock_pool_from_datahub
-        import pandas as pd
         
-        # Mock universe 数据
+        # Mock universe 数据 (polars)
         mock_stock_instance = Mock()
-        mock_universe = pd.DataFrame({
+        mock_universe = pl.DataFrame({
             'ts_code': ['000001.SZ', '000002.SZ', '300001.SZ'],
             'name': ['平安银行', '万科A', '特锐德'],
             'list_date': ['19910403', '19910129', '20091030']
@@ -304,15 +299,15 @@ class TestDataLoaderModule:
     """测试 datahub.loaders.stock_loader 模块。"""
     
     def test_load_market_data_removed(self):
-        """测试 load_market_data 已被移除（业务逻辑应在调用方实现）。"""
-        # 该函数已删除，因为依赖外部模块
+        """测试 load_market_data 已被移除(业务逻辑应在调用方实现)。"""
+        # 该函数已删除,因为依赖外部模块
         with pytest.raises(ImportError):
             from datahub.loaders.stock_loader import load_market_data
-    
+            load_market_data()
+
     @patch('datahub.loaders.stock_loader.StockDataLoader')
     def test_load_latest_market_data(self, mock_loader_class):
         """测试加载最新市场数据。"""
-        from datahub.loaders.stock_loader import load_latest_market_data
         
         # Mock loader
         mock_loader = Mock()
@@ -327,19 +322,20 @@ class TestDataLoaderModule:
         assert 'start_date' in call_kwargs
         assert 'end_date' in call_kwargs
     
-    @patch('datahub.loaders.stock_loader.get_available_industries')
-    def test_get_available_industries_with_data(self, mock_get_industries):
+    @patch('datahub.loaders.stock_loader.StockDataLoader')
+    def test_get_available_industries_with_data(self, mock_loader_class):
         """测试获取行业列表（带数据）。"""
-        from datahub.loaders.stock_loader import get_available_industries
         
-        data = pd.DataFrame({'industry': ['银行', '证券']})
-        mock_get_industries.return_value = ['银行', '证券']
+        # Mock loader
+        mock_loader = Mock()
+        mock_loader.get_available_industries.return_value = ['证券', '银行']  # sorted
+        mock_loader_class.return_value = mock_loader
         
+        data = pl.DataFrame({'industry': ['银行', '证券']})
         result = get_available_industries(data)
         
-        mock_get_industries.assert_called_once_with(data)
-        assert result == ['银行', '证券']
-
+        # 结果是排序后的
+        assert result == ['证券', '银行']
 
 
 class TestTushareFieldMapping:
@@ -347,7 +343,6 @@ class TestTushareFieldMapping:
     
     def test_volume_ratio_field_name(self):
         """测试量比字段名正确性（应为 volume_ratio 而非 vol_ratio）。"""
-        from datahub.data_fields import FIELD_MAPPING, FIELD_DESCRIPTIONS
         
         # 验证中文到英文的映射
         assert FIELD_MAPPING['量比'] == 'volume_ratio'
@@ -358,7 +353,6 @@ class TestTushareFieldMapping:
     
     def test_daily_basic_fields_completeness(self):
         """测试 daily_basic 接口字段完整性。"""
-        from datahub.data_fields import FIELD_MAPPING
         
         # 验证所有估值指标字段都存在
         required_fields = [
@@ -376,15 +370,10 @@ class TestTushareFieldMapping:
     
     def test_field_mapping_consistency(self):
         """测试字段映射一致性（registry 和 data_fields 应该一致）。"""
-        from datahub.data_fields import FIELD_MAPPING
         
         # 重新导入 registry 模块以确保注册（避免被其他测试的 mock 影响）
-        import importlib
-        import datahub.registry.stock
         importlib.reload(datahub.registry.stock)
         
-        from datahub.registry.stock import DatasetRegistry
-        from datahub.core.dataset import Dataset
         
         # 获取 STOCK_DAILY 的 daily_basic 步骤配置
         result = DatasetRegistry.get(Dataset.STOCK_DAILY)

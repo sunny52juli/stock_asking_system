@@ -33,30 +33,15 @@ class ResultDisplayer:
         logger.info("\n📊 Agent 分析结果:")
         logger.info("-" * 60)
         
-        # 提取股票代码
-        stock_codes = ResultDisplayer._extract_stock_codes(content)
+        # 直接显示 Agent 的回复内容
+        logger.info(content)
         
-        if not stock_codes:
-            logger.info(content[:800])
-            logger.info("\n⚠️ 未检测到明确的股票代码")
-            return
-        
-        # 限制显示数量（最多20个）
-        max_display = 20
-        if len(stock_codes) > max_display:
-            display_codes = stock_codes[:max_display]
-            remaining = len(stock_codes) - max_display
-            content_with_limit = "推荐股票：" + ", ".join(display_codes)
-            logger.info(content_with_limit)
-            logger.info(f"\n... 还有 {remaining} 只股票")
-        else:
-            logger.info(content[:800])
-        
-        # 提取并显示候选股票详情（优先使用结构化的 candidates 数据）
+        # 如果有 candidates 数据，额外显示结构化的股票列表
         candidates = result.get("candidates", [])
         if candidates:
-            logger.info(f"\n✅ 筛选出 {len(candidates)} 只股票")
-            logger.info("=" * 60)
+            logger.info(f"\n{'='*60}")
+            logger.info(f"✅ 共筛选出 {len(candidates)} 只股票")
+            logger.info(f"{'='*60}")
             
             # 显示前10只股票的详细信息
             display_count = min(10, len(candidates))
@@ -75,18 +60,18 @@ class ResultDisplayer:
                     for key, value in list(metrics.items())[:3]:  # 最多显示3个指标
                         if isinstance(value, (int, float)):
                             if "pct" in key.lower() or "change" in key.lower():
-                                logger.info(f"- **{key}**: {value:.2%}")
+                                logger.info(f"   - {key}: {value:.2%}")
                             elif "vol" in key.lower() or "volume" in key.lower():
-                                logger.info(f"- **{key}**: {value:.2f}")
+                                logger.info(f"   - {key}: {value:.2f}")
                             else:
-                                logger.info(f"- **{key}**: {value:.4f}")
+                                logger.info(f"   - {key}: {value:.4f}")
                 
-                logger.info(f"- **置信度**: {confidence:.2%}")
+                logger.info(f"   - 置信度: {confidence:.2%}")
                 if reason:
-                    logger.info(f"- **理由**: {reason[:100]}")
+                    logger.info(f"   - 理由: {reason[:80]}")
             
             if len(candidates) > 10:
-                logger.info(f"\n... 还有 {len(candidates) - 10} 只股票")
+                logger.info(f"\n... 还有 {len(candidates) - 10} 只股票（详见保存的脚本）")
     
     @staticmethod
     def _extract_stock_codes(content: str) -> list[str]:

@@ -5,6 +5,9 @@ import pytest
 from pathlib import Path
 import tempfile
 
+import infrastructure.logging.logger as log_module
+import time
+
 from infrastructure.logging.logger import (
     get_logger,
     configure_logging,
@@ -32,7 +35,6 @@ class TestGetLogger:
     def test_get_logger_auto_configures(self):
         """测试自动配置日志系统."""
         # 重置全局状态
-        import infrastructure.logging.logger as log_module
         log_module._configured = False
         
         logger = get_logger("auto_test")
@@ -40,7 +42,6 @@ class TestGetLogger:
 
     def test_get_logger_sets_level(self):
         """测试日志级别设置."""
-        import infrastructure.logging.logger as log_module
         log_module._configured = False
         log_module._log_level = logging.DEBUG
         
@@ -54,7 +55,6 @@ class TestConfigureLogging:
 
     def setup_method(self):
         """每个测试前重置状态."""
-        import infrastructure.logging.logger as log_module
         log_module._configured = False
         # 清除根日志器的处理器
         root_logger = logging.getLogger()
@@ -103,7 +103,6 @@ class TestConfigureLogging:
 
     def test_configure_with_log_file(self):
         """测试文件日志配置."""
-        import time
         with tempfile.TemporaryDirectory() as tmpdir:
             log_file = Path(tmpdir) / "test.log"
             configure_logging(log_file=str(log_file))

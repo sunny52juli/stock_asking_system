@@ -7,12 +7,14 @@
 - prefilter.py: 预筛选逻辑
 - batch_calculator.py: 批量计算引擎
 """
-
 from typing import Any, Optional
-
 import pandas as pd
+import polars as pl
 
+from datahub import Calendar
+from infrastructure.config.settings import get_settings
 from infrastructure.logging.logger import get_logger
+from src.screening.batch_calculator import BatchCalculator
 
 logger = get_logger(__name__)
 
@@ -20,18 +22,17 @@ logger = get_logger(__name__)
 class ScreeningExecutor:
     """股票筛选执行器 - 组合预筛选和批量计算."""
 
-    def __init__(self, data: pd.DataFrame, screening_date: Optional[str] = None):
+    def __init__(self, data: pl.DataFrame, screening_date: Optional[str] = None, index_data: Optional[pl.DataFrame] = None):
         """初始化股票筛选器.
         
         Args:
-            data: 市场数据 DataFrame
+            data: 市场数据 DataFrame (columns: ts_code, trade_date, ...)
             screening_date: 筛选日期（YYYYMMDD 格式），默认使用最新交易日
+            index_data: 指数数据 DataFrame (columns: trade_date, index_close)，可选
         """
-        from datahub import Calendar
-        from src.screening.prefilter import PreFilterEngine
-        from src.screening.batch_calculator import BatchCalculator
         
         self.data = data
+        self.index_data = index_data
         
         # 使用传入的日期或自动获取最新交易日
         if screening_date is None:
@@ -44,8 +45,9 @@ class ScreeningExecutor:
         self.screening_date_str = screening_date
         self.latest_date = pd.to_datetime(self.screening_date_str, format="%Y%m%d")
         
-        # 验证数据是否包含筛选日期
-        all_dates = sorted(data.index.get_level_values("trade_date").unique())
+        # 获取所有交易日期
+        all_dates_pl = data.select(pl.col("trade_date").unique()).to_series().sort().to_list()
+        all_dates = [pd.to_datetime(d) for d in all_dates_pl]
         
         if len(all_dates) == 0:
             raise ValueError("数据中不包含任何交易日")
@@ -64,7 +66,6 @@ class ScreeningExecutor:
         # 验证是否有足够的历史数据
         try:
             screen_idx = all_dates.index(self.latest_date)
-            from infrastructure.config.settings import get_settings
             observation_days = get_settings().observation_days
             available_days = screen_idx + 1
             if available_days < observation_days:
@@ -75,17 +76,14 @@ class ScreeningExecutor:
         except ValueError:
             pass
         
-        self.all_stock_codes = data.index.get_level_values("ts_code").unique().tolist()
+        # 获取所有股票代码
+        self.all_stock_codes = data.select(pl.col("ts_code").unique()).to_series().to_list()
         
         # 初始化子模块
-        self.prefilter_engine = PreFilterEngine(
-            data=data,
-            latest_date=self.latest_date,
-            all_stock_codes=self.all_stock_codes
-        )
         self.batch_calculator = BatchCalculator(
             data=data,
-            latest_date=self.latest_date
+            latest_date=self.latest_date,
+            index_data=index_data
         )
 
     def run_screening(
@@ -101,11 +99,11 @@ class ScreeningExecutor:
         Returns:
             筛选结果列表
         """
-        # 步骤 1: 预筛选
-        filtered_stock_codes = self.prefilter_engine.prefilter(screening_logic, query=query)
+        # 步骤 1: 批量计算（预筛选已在 stock_pool_filter 中完成）
+        filtered_stock_codes = self.all_stock_codes
         
         if not filtered_stock_codes:
-            logger.warning("⚠️ 预筛选后无股票，请检查筛选条件")
+            logger.warning("⚠️ 无可用股票")
             return []
         
         # 步骤 2: 批量计算
@@ -120,7 +118,7 @@ class ScreeningExecutor:
 
 
 def create_screening_executor(
-    data: pd.DataFrame,
+    data: pl.DataFrame,
     screening_date: Optional[str] = None,
 ) -> ScreeningExecutor:
     """创建筛选执行器实例的便捷函数."""

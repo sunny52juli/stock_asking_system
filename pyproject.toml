@@ -20,7 +20,9 @@ classifiers = [
 
 dependencies = [
     "pandas>=2.0.0",
+    "polars>=0.20.0",
     "numpy>=1.24.0",
+    "scipy>=1.11.0",
     "pyarrow>=14.0.0",
     "tushare>=1.3.0",
     "python-dotenv>=1.0.0",
@@ -31,8 +33,10 @@ dependencies = [
     "langchain-openai>=0.2.0",
     "mcp>=1.26.0,<2.0.0",
     "exchange-calendars>=1.15.0",
-    # Stock Asking MCP (workspace dependency)
+    # Workspace dependencies
     "stock-asking-mcp",
+    "stock-asking-screener",
+    "stock-asking-backtest",
 ]
 
 [project.optional-dependencies]
@@ -73,10 +77,12 @@ build-backend = "hatchling.build"
 
 # UV Workspace 配置
 [tool.uv.workspace]
-members = ["stock-asking-mcp"]
+members = ["mcp_server", "stock-asking-screener", "stock-asking-backtest"]
 
 [tool.uv.sources]
 stock-asking-mcp = { workspace = true }
+stock-asking-screener = { workspace = true }
+stock-asking-backtest = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["config", "core", "datahub", "factor_backtest_system", "stock_asking_system", "core.agent"]

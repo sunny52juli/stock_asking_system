@@ -2,6 +2,9 @@
 
 Skills are knowledge units (not tools) that are injected into agent prompts.
 Local skills are loaded from SKILL.md files, dynamic skills are registered at runtime.
+
+DeepAgents 会通过 read_file 工具自适应选择合适的 Skills，
+所以我们只需加载所有 Skills 并注入到虚拟文件系统即可。
 """
 
 from __future__ import annotations
@@ -109,15 +112,11 @@ class DynamicSkill:
 
 
 class SkillRegistry:
-    """Central registry for all skills (local + dynamic)."""
-
-    # Map agent names to skill names they should receive
-    _AGENT_SKILL_MAP: dict[str, list[str]] = {
-        "intent": ["intent-patterns"],
-        "planner": ["strategy-templates", "screening-patterns"],
-        "executor": [],  # Executor doesn't use skills
-        "evaluator": ["quality-criteria"],
-    }
+    """Central registry for all skills (local + dynamic).
+    
+    DeepAgents 会通过 read_file 工具自适应选择合适的 Skills，
+    所以我们只需加载所有 Skills 并注入到虚拟文件系统即可。
+    """
 
     def __init__(self) -> None:
         """Initialize empty skill registry."""
@@ -176,63 +175,6 @@ class SkillRegistry:
             Skill if found, None otherwise
         """
         return self._skills.get(name)
-
-    def get_for_agent(self, agent_name: str) -> list[Skill]:
-        """Return skills relevant to a specific agent.
-
-        Args:
-            agent_name: Name of the agent
-
-        Returns:
-            List of skills for that agent
-        """
-        skill_names = self._AGENT_SKILL_MAP.get(agent_name, [])
-        skills = []
-        for name in skill_names:
-            skill = self._skills.get(name)
-            if skill:
-                skills.append(skill)
-            else:
-                logger.warning("Skill '%s' requested by agent '%s' not found", name, agent_name)
-
-        logger.debug("Agent '%s' receives %d skills", agent_name, len(skills))
-        return skills
-
-    def get_within_budget(self, agent_name: str, token_budget: int) -> list[Skill]:
-        """Return skills for agent, respecting token budget.
-
-        Args:
-            agent_name: Name of the agent
-            token_budget: Maximum tokens to allocate for skills
-
-        Returns:
-            List of skills that fit within budget
-        """
-        skills = self.get_for_agent(agent_name)
-        selected: list[Skill] = []
-        remaining = token_budget
-
-        # Sort by token cost (smallest first) to maximize skill count
-        for skill in sorted(skills, key=lambda s: s.token_cost):
-            if skill.token_cost <= remaining:
-                selected.append(skill)
-                remaining -= skill.token_cost
-            else:
-                logger.debug(
-                    "Skill '%s' (%d tokens) exceeds remaining budget (%d tokens)",
-                    skill.name,
-                    skill.token_cost,
-                    remaining,
-                )
-
-        logger.debug(
-            "Agent '%s' receives %d/%d skills within budget %d",
-            agent_name,
-            len(selected),
-            len(skills),
-            token_budget,
-        )
-        return selected
 
     @property
     def all_skills(self) -> dict[str, Skill]:

@@ -4,11 +4,11 @@ import sys
 from pathlib import Path
 
 # 添加项目根目录到路径
+import pytest
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 if __name__ == "__main__":
-    import pytest
     
     # 运行所有 mcp_server 测试
     exit_code = pytest.main([

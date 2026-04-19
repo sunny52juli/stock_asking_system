@@ -2,12 +2,10 @@
 
 所有工具执行器在此集中注册，提供统一的调用接口。
 """
-
 from __future__ import annotations
 
+import polars as pl
 from typing import Any, Callable
-
-import pandas as pd
 
 # 导入所有执行器模块
 from .math_tools import (
@@ -38,22 +36,32 @@ from .technical_tools import (
     volume_ratio,
     close_above_high,
 )
-from .other_tools import (
+from .statistical_tools import (
     correlation,
     skewness,
     kurtosis,
+)
+from .feature_tools import (
     ts_rank,
     ts_argmax,
     ts_argmin,
     decay_linear,
+)
+from .risk_tools import (
     volatility,
     max_drawdown,
-    filter_by_industry,
-    filter_by_market,
+)
+from .index_tools import (
+    beta,
+    alpha,
+    outperform_rate,
+    correlation_with_index,
+    tracking_error,
+    information_ratio,
 )
 
 # 工具函数注册表
-TOOL_FUNCTIONS: dict[str, Callable[..., pd.Series]] = {
+TOOL_FUNCTIONS: dict[str, Callable[..., pl.Series | pl.DataFrame]] = {
     # Math
     "abs_value": abs_value,
     "log_transform": log_transform,
@@ -97,13 +105,17 @@ TOOL_FUNCTIONS: dict[str, Callable[..., pd.Series]] = {
     "volatility": volatility,
     "max_drawdown": max_drawdown,
     
-    # Screening
-    "filter_by_industry": filter_by_industry,
-    "filter_by_market": filter_by_market,
+    # Index Comparison
+    "beta": beta,
+    "alpha": alpha,
+    "outperform_rate": outperform_rate,
+    "correlation_with_index": correlation_with_index,
+    "tracking_error": tracking_error,
+    "information_ratio": information_ratio,
 }
 
 
-def execute_tool(tool_name: str, **kwargs) -> pd.Series:
+def execute_tool(tool_name: str, **kwargs) -> pl.Series | pl.DataFrame:
     """执行指定工具.
     
     Args:
@@ -126,6 +138,18 @@ def execute_tool(tool_name: str, **kwargs) -> pd.Series:
     
     try:
         func = TOOL_FUNCTIONS[tool_name]
+        
+        # 特殊处理：指数工具使用 stock_data/index_data 而不是 data
+        index_tools = {'beta', 'alpha', 'outperform_rate', 'correlation_with_index', 'tracking_error', 'information_ratio'}
+        if tool_name in index_tools:
+            # 将 data 重命名为 stock_data
+            if 'data' in kwargs and 'stock_data' not in kwargs:
+                kwargs['stock_data'] = kwargs.pop('data')
+            
+            # 移除指数工具不支持的参数
+            for param in ['window', 'min_periods', 'periods']:
+                kwargs.pop(param, None)
+        
         return func(**kwargs)
     except ValueError:
         # ValueError 直接抛出，不包装

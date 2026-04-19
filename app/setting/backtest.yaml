@@ -10,4 +10,3 @@
 backtest:
   holding_periods: [5, 10, 20]  # 持有期列表 (天)
   screening_date: "20260201"    # 回测筛选日期 (YYYYMMDD格式)
-  index_code: null              # 指数代码 (null=全市场, 如 "000300.SH")

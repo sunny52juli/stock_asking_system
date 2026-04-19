@@ -73,8 +73,6 @@ ALLOWED_CALLABLES: set[str] = {
     "power_transform",
     "max_of",
     "min_of",
-    "filter_by_industry",
-    "filter_by_market",
     "get_available_industries",
     "rank_normalize",
     "zscore_normalize",

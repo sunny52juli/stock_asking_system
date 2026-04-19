@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Any
-
-import pandas as pd
+from typing import  Any
+import polars as pl
 
 
 class DataSource(ABC):
@@ -10,7 +9,7 @@ class DataSource(ABC):
     def name(self) -> str: ...
 
     @abstractmethod
-    def call(self, api_name: str, params: dict[str, Any]) -> pd.DataFrame | None: ...
+    def call(self, api_name: str, params: dict[str, Any]) -> "pl.DataFrame | None": ...
 
     @abstractmethod
     def ping(self) -> bool: ...

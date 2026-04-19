@@ -12,7 +12,7 @@ DatasetRegistry.register(
         storage_path="index/daily",
         date_column="trade_date",
         code_column="ts_code",
-        partition_key_template="{date}",
+        partition_key_template="{date}_{index_code}",  # 按日期+指数代码分区
         description="指数日线行情（开高低收量额）",
     ),
     pipeline=[

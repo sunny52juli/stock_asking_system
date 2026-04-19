@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from typing import Literal, Protocol
 
-import pandas as pd
-
 
 class StockProtocol(Protocol):
     """Stock. Entry: from datahub import Stock; s = Stock()."""

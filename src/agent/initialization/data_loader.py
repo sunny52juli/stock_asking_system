@@ -1,16 +1,28 @@
 """数据加载器 - 负责加载和预处理市场数据."""
 
 from __future__ import annotations
-
 import pandas as pd
+import polars as pl
 from pathlib import Path
 from typing import Any
 
 from infrastructure.logging.logger import get_logger
 from src.screening.stock_pool_filter import StockPoolFilter
 from src.screening.industry_matcher import IndustryMatcher
-from utils.screening.screening_tools import get_data_start_date
+from datahub.calendar_utils import get_data_start_date
 
+from datahub import Calendar, Index
+from datahub import Index
+from datahub import Stock
+from datahub import Stock, Calendar
+from datahub.loaders import load_raw_market_data
+from infrastructure.config.settings import get_settings
+from mcp_server.executors.index_selector import get_index_code
+from src.screening.stock_pool_filter import StockPoolFilter
+from utils.agent.llm_helper import build_llm_from_api_config
+import subprocess
+import sys
+import traceback
 logger = get_logger(__name__)
 
 
@@ -26,14 +38,12 @@ class DataLoader:
         self.settings = settings
         self.industry_matcher: IndustryMatcher | None = None
     
-    def load_raw_market_data(self) -> tuple[pd.DataFrame, list[str]]:
+    def load_raw_market_data(self) -> tuple[pl.DataFrame, list[str], pl.DataFrame | None]:
         """加载原始市场数据（不过滤）.
         
         Returns:
-            (原始DataFrame, 全量股票代码列表)
+            (原始DataFrame, 全量股票代码列表, 指数数据DataFrame)
         """
-        from datahub import Calendar
-        from datahub.loaders import load_raw_market_data
         
         # 获取最新交易日期
         calendar = Calendar()
@@ -60,11 +70,14 @@ class DataLoader:
             min_list_days=0,
         )
         
-        # 获取全量股票代码
-        stock_codes = df.index.get_level_values('ts_code').unique().tolist()
+        # 获取全量股票代码（polars API）
+        stock_codes = df.select(pl.col("ts_code").unique()).to_series().to_list()
         logger.info(f"📊 全量股票池：{len(stock_codes)} 只股票")
         
-        return df, stock_codes
+        # 加载指数数据
+        index_df = self._load_index_data(stock_codes, start_date, latest_trade_date)
+        
+        return df, stock_codes, index_df
     
     def load_market_data(self) -> tuple[pd.DataFrame, list[str]]:
         """加载市场数据并执行股票池过滤.
@@ -72,7 +85,6 @@ class DataLoader:
         Returns:
             (处理后的DataFrame, 股票代码列表)
         """
-        from datahub import Stock, Calendar
         
         # 获取最新交易日期
         calendar = Calendar()
@@ -197,8 +209,6 @@ class DataLoader:
         
         # 初始化行业匹配器（如果尚未初始化）
         if self.industry_matcher is None:
-            from utils.agent.llm_helper import build_llm_from_api_config
-            from infrastructure.config.settings import get_settings
             llm = build_llm_from_api_config(get_settings().llm.to_dict())
             self.industry_matcher = IndustryMatcher(llm)
         
@@ -227,7 +237,6 @@ class DataLoader:
         Returns:
             股票基本信息 DataFrame
         """
-        from datahub import Stock
         
         cache_root = self.settings.data.cache_root
         if not cache_root.is_absolute():
@@ -236,7 +245,8 @@ class DataLoader:
         
         stock = Stock(root=str(cache_root))
         basic_df = stock.universe()
-        if basic_df is None or basic_df.empty:
+        # Polars: is_empty() 代替 .empty
+        if basic_df is None or (hasattr(basic_df, 'is_empty') and basic_df.is_empty()) or (hasattr(basic_df, 'empty') and basic_df.empty):
             raise ValueError("无法获取股票基本信息")
         
         return basic_df
@@ -257,7 +267,6 @@ class DataLoader:
         Returns:
             价格数据 DataFrame
         """
-        from datahub import Stock
         
         cache_root = self.settings.data.cache_root
         if not cache_root.is_absolute():
@@ -267,13 +276,20 @@ class DataLoader:
         stock = Stock(root=str(cache_root))
         df = stock.price(start_date=start_date, end_date=end_date)
         
-        if df is None or df.empty:
+        # Polars: is_empty() 代替 .empty
+        if df is None or (hasattr(df, 'is_empty') and df.is_empty()) or (hasattr(df, 'empty') and df.empty):
             raise ValueError(f"无法获取市场数据 ({start_date}~{end_date})")
         
         logger.info(f"📊 原始数据：{len(df)} 条记录，日期范围：{df['trade_date'].min()} ~ {df['trade_date'].max()}")
         
         # 过滤到股票池
-        df = df[df["ts_code"].isin(stock_codes)].copy()
+        if hasattr(df, 'filter'):
+            # Polars: 使用 filter 和 is_in
+            df = df.filter(pl.col("ts_code").is_in(stock_codes))
+        else:
+            # Pandas fallback
+            df = df[df["ts_code"].isin(stock_codes)].copy()
+        
         logger.info(f"📊 过滤到股票池后：{len(df)} 条记录")
         
         return df
@@ -288,7 +304,6 @@ class DataLoader:
         Returns:
             过滤后的 DataFrame
         """
-        from src.screening.stock_pool_filter import StockPoolFilter
         
         pool_filter = StockPoolFilter(self.settings.stock_pool)
         df = pool_filter._filter_price_data(df, stock_codes)
@@ -332,3 +347,318 @@ class DataLoader:
             logger.info(f"✅ 已加载市场数据：{len(df)} 条记录")
         
         return df
+    
+    def _load_index_data(
+        self,
+        stock_codes: list[str],
+        start_date: str,
+        end_date: str,
+    ) -> pd.DataFrame | None:
+        """加载指数数据。
+        
+        Args:
+            stock_codes: 股票代码列表
+            start_date: 起始日期
+            end_date: 结束日期
+            
+        Returns:
+            指数数据 DataFrame (MultiIndex: trade_date, index_code; columns: close, ...)
+        """
+        try:
+            
+            if not stock_codes:
+                logger.warning("⚠️ 无法确定股票列表，跳过指数数据加载")
+                return None
+            
+            # 收集所有唯一的指数代码（采样前100只股票）
+            unique_indices: set[str] = set()
+            for code in stock_codes[:100]:  # 采样避免遍历全部5500只
+                idx_code = get_index_code(code)
+                unique_indices.add(idx_code)
+            
+            indices_list = sorted(list(unique_indices))
+            logger.info(f"📊 检测到 {len(indices_list)} 个指数: {', '.join(indices_list)}")
+            
+            # 使用 batch_level() 一次性批量加载所有指数数据
+            index_domain = Index()
+            
+            try:
+                logger.info(f"🔍 开始批量加载 {len(indices_list)} 个指数...")
+                combined_index_data = index_domain.batch_level(
+                    index_codes=indices_list,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                
+                if combined_index_data.is_empty():
+                    logger.warning("⚠️ 批量加载返回空数据，尝试逐个加载...")
+                    return self._load_indices_fallback(index_domain, indices_list, start_date, end_date)
+                
+                logger.info(f"✅ 批量加载成功，共 {len(combined_index_data)} 条记录")
+                
+                # 检查实际加载了多少个不同的指数
+                col_name = 'index_code' if 'index_code' in combined_index_data.columns else 'ts_code'
+                actual_indices = combined_index_data[col_name].unique().to_list()
+                logger.info(f"✅ 实际加载了 {len(actual_indices)} 个指数: {', '.join(actual_indices)}")
+                
+                if len(actual_indices) < len(indices_list):
+                    missing = set(indices_list) - set(actual_indices)
+                    logger.warning(f"⚠️ 以下指数数据缺失: {', '.join(sorted(missing))}")
+                    logger.info(f"🔄 尝试同步缺失的指数数据...")
+                    
+                    # 自动同步缺失的指数
+                    self._sync_missing_indices(sorted(missing))
+                    
+                    # 重新批量加载所有指数
+                    logger.info(f"🔄 重新批量加载所有指数...")
+                    combined_index_data = index_domain.batch_level(
+                        index_codes=indices_list,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                    
+                    if not combined_index_data.is_empty():
+                        actual_indices = combined_index_data[col_name].unique().to_list()
+                        logger.info(f"✅ 重新加载后，实际加载了 {len(actual_indices)} 个指数: {', '.join(actual_indices)}")
+                    else:
+                        logger.error("❌ 重新加载后仍为空")
+                        return None
+                
+                # 转换日期格式
+                if 'trade_date' in combined_index_data.columns:
+                    try:
+                        combined_index_data = combined_index_data.with_columns(
+                            pl.col('trade_date').cast(pl.Datetime)
+                        )
+                    except Exception:
+                        pass
+                
+                # 重命名 ts_code 为 index_code（如果需要）
+                if 'ts_code' in combined_index_data.columns:
+                    combined_index_data = combined_index_data.rename({'ts_code': 'index_code'})
+                
+                logger.info(f"✅ 成功加载 {len(indices_list)} 个指数数据，共 {len(combined_index_data)} 条记录")
+                return combined_index_data
+                
+            except Exception as e:
+                logger.error(f"❌ 批量加载失败: {e}")
+                logger.info(f"🔄 降级为逐个加载...")
+                return self._load_indices_fallback(index_domain, indices_list, start_date, end_date)
+            
+        except Exception as e:
+            logger.warning(f"⚠️ 加载指数数据失败: {e}")
+            logger.debug(traceback.format_exc())
+            return None
+    
+    def _load_indices_fallback(
+        self,
+        index_domain,
+        indices_list: list[str],
+        start_date: str,
+        end_date: str,
+    ) -> pd.DataFrame | None:
+        """降级方案：逐个加载指数数据。
+        
+        Args:
+            index_domain: Index 实例
+            indices_list: 指数代码列表
+            start_date: 起始日期
+            end_date: 结束日期
+            
+        Returns:
+            合并后的指数数据 DataFrame
+        """
+        logger.info(f"🔄 使用降级方案：逐个加载 {len(indices_list)} 个指数...")
+        dfs = []
+        failed_indices = []
+        
+        for idx_code in indices_list:
+            try:
+                df = index_domain.level(
+                    index_code=idx_code,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                if not df.is_empty():
+                    logger.info(f"   ✅ {idx_code}: {len(df)} 条记录")
+                    dfs.append(df)
+                else:
+                    logger.warning(f"   ⚠️ {idx_code}: 空数据")
+                    failed_indices.append(idx_code)
+            except Exception as e:
+                logger.error(f"   ❌ {idx_code}: {e}")
+                failed_indices.append(idx_code)
+        
+        if not dfs:
+            logger.warning("⚠️ 所有指数数据加载失败")
+            return None
+        
+        combined_index_data = pl.concat(dfs)
+        logger.info(f"✅ 降级方案成功，共 {len(combined_index_data)} 条记录")
+        
+        # 如果有失败的指数，尝试同步
+        if failed_indices:
+            logger.info(f"🔄 尝试同步缺失的指数: {', '.join(failed_indices)}")
+            self._sync_missing_indices(failed_indices)
+            
+            # 重新加载失败的指数
+            for idx_code in failed_indices:
+                try:
+                    df = index_domain.level(
+                        index_code=idx_code,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                    if not df.is_empty():
+                        logger.info(f"   ✅ {idx_code}: 重新加载成功")
+                        dfs.append(df)
+                except Exception as e:
+                    logger.error(f"   ❌ {idx_code}: 重新加载失败 - {e}")
+            
+            if len(dfs) > len(combined_index_data):
+                combined_index_data = pl.concat(dfs)
+                logger.info(f"✅ 重新加载后共 {len(combined_index_data)} 条记录")
+        
+        # 转换日期格式
+        if 'trade_date' in combined_index_data.columns:
+            try:
+                combined_index_data = combined_index_data.with_columns(
+                    pl.col('trade_date').cast(pl.Datetime)
+                )
+            except Exception:
+                pass
+        
+        # 重命名 ts_code 为 index_code
+        if 'ts_code' in combined_index_data.columns:
+            combined_index_data = combined_index_data.rename({'ts_code': 'index_code'})
+        
+        return combined_index_data
+    
+    def _sync_missing_indices(self, missing_indices: list[str]):
+        """同步缺失的指数数据。
+        
+        Args:
+            missing_indices: 缺失的指数代码列表
+        """
+        if not missing_indices:
+            return
+        
+        try:
+            
+            codes_str = ','.join(missing_indices)
+            sync_cmd = [
+                sys.executable, '-m', 'datahub', 'sync',
+                '--dataset', 'index_daily',
+                '--codes', codes_str
+            ]
+            
+            logger.info(f"   执行命令: {' '.join(sync_cmd)}")
+            result = subprocess.run(
+                sync_cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                timeout=300  # 5分钟超时
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"   ✅ 指数数据同步成功")
+            else:
+                logger.error(f"   ❌ 指数数据同步失败")
+                if result.stderr:
+                    logger.error(f"   错误信息: {result.stderr[:500]}")
+        except subprocess.TimeoutExpired:
+            logger.error(f"   ❌ 指数数据同步超时（超过5分钟）")
+        except Exception as e:
+            logger.error(f"   ❌ 自动同步失败: {e}")
+    
+    def _load_and_merge_index_data(
+        self,
+        df: pd.DataFrame,
+        stock_codes: list[str],
+        start_date: str,
+        end_date: str,
+    ) -> pd.DataFrame:
+        """加载指数数据并合并到股票数据中。
+        
+        根据股票代码自动选择对应的基准指数，并将指数价格数据合并到股票数据中。
+        
+        Args:
+            df: 股票数据 DataFrame (columns: ts_code, trade_date, close, ...)
+            stock_codes: 股票代码列表
+            start_date: 起始日期
+            end_date: 结束日期
+            
+        Returns:
+            添加了 index_close 列的 DataFrame
+        """
+        try:
+            
+            # 确定需要加载指数的股票（采样前10只）
+            codes_to_process = stock_codes[:10] if stock_codes else []
+            
+            if not codes_to_process:
+                logger.warning("⚠️ 无法确定股票列表，跳过指数数据加载")
+                return df
+            
+            # 统计各指数的出现次数，选择最常用的指数
+            index_counts = {}
+            for code in codes_to_process:
+                idx_code = get_index_code(code)
+                index_counts[idx_code] = index_counts.get(idx_code, 0) + 1
+            
+            # 选择出现次数最多的指数
+            primary_index = max(index_counts, key=index_counts.get)
+            logger.info(f"📊 主要使用指数: {primary_index} ({index_counts[primary_index]}/{len(codes_to_process)} 只股票)")
+            
+            # 加载指数数据
+            index_domain = Index()
+            index_df = index_domain.level(
+                index_code=primary_index,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            
+            if index_df.empty or 'close' not in index_df.columns:
+                logger.warning(f"⚠️ 指数 {primary_index} 数据为空或缺少 close 列")
+                return df
+            
+            # 重命名列并准备合并
+            index_df = index_df.rename(columns={'close': 'index_close'})
+            
+            # 将指数数据合并到股票数据中
+            result_df = df.copy()
+            
+            # 如果 df 是 MultiIndex (trade_date, ts_code)
+            if isinstance(df.index, pd.MultiIndex):
+                # 从 MultiIndex 中提取 trade_date
+                trade_dates = df.index.get_level_values('trade_date')
+                
+                # 创建映射：trade_date -> index_close
+                if 'trade_date' in index_df.columns:
+                    index_df['trade_date'] = pd.to_datetime(index_df['trade_date'])
+                    index_map = index_df.set_index('trade_date')['index_close']
+                    
+                    # 映射到每行
+                    result_df['index_close'] = trade_dates.map(index_map)
+                else:
+                    logger.warning("⚠️ 指数数据缺少 trade_date 列")
+                    return df
+            else:
+                # 如果 df 是普通 DataFrame
+                if 'trade_date' in df.columns and 'trade_date' in index_df.columns:
+                    df_dates = pd.to_datetime(df['trade_date'])
+                    index_df['trade_date'] = pd.to_datetime(index_df['trade_date'])
+                    index_map = index_df.set_index('trade_date')['index_close']
+                    result_df['index_close'] = df_dates.map(index_map)
+                else:
+                    logger.warning("⚠️ 数据格式不匹配，无法合并指数数据")
+                    return df
+            
+            logger.info(f"✅ 成功加载指数数据: {primary_index}, {len(index_df)} 个交易日")
+            return result_df
+            
+        except Exception as e:
+            logger.warning(f"⚠️ 加载指数数据失败: {e}")
+            logger.debug(traceback.format_exc())
+            return df

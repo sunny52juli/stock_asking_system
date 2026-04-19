@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pandas as pd
-
 from datahub.core.dataset import Dataset, DatasetRegistry
 from datahub.core.query import Query
 from datahub.core.repository import Repository
@@ -31,7 +29,6 @@ class DataService:
     ) -> None:
         if repo is None:
             from datahub.factory import Factory
-
             self.repo = Factory.create_repo(root=root, mode=mode)
         else:
             self.repo = repo

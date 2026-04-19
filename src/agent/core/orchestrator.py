@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-
 from infrastructure.logging.logger import LoggerMixin, get_logger
 from infrastructure.config.settings import get_settings
 from utils.agent.result_checker import _check_api_key
@@ -12,14 +11,14 @@ from src.agent.quality.quality_evaluator import ScreeningQualityEvaluator
 from src.agent.harness.hooks import HookExecutor
 from infrastructure.telemetry import get_telemetry
 from infrastructure.session import get_session_manager
-from src.agent.execution.planner import get_planner
 from infrastructure.retry.manager import get_retry_manager
 
 # 导入新的模块化组件
-from src.agent.initialization.data_loader import DataLoader
 from src.agent.initialization.component_initializer import ComponentInitializer
 from src.agent.execution.query_executor import QueryExecutor
 
+from infrastructure.errors.exceptions import ToolExecutionError
+from src.agent.models.screening_logic import ToolStep
 logger = get_logger(__name__)
 
 
@@ -34,7 +33,6 @@ class ScreenerOrchestrator(LoggerMixin):
         project_root = Path(__file__).resolve().parent.parent.parent.parent
         
         # 初始化核心组件管理器
-        self.data_loader = DataLoader(self.settings)
         self.component_initializer = ComponentInitializer(self.settings, project_root)
         
         # 质量评估器
@@ -49,7 +47,6 @@ class ScreenerOrchestrator(LoggerMixin):
         # 可观测性和会话管理
         self.telemetry = get_telemetry(enabled=True)
         self.session_manager = get_session_manager()
-        self.planner = get_planner()
         
         # 重试管理器
         self.retry_manager = get_retry_manager()
@@ -58,6 +55,7 @@ class ScreenerOrchestrator(LoggerMixin):
         self.agent = None
         self.initial_files = None
         self.data = None
+        self.index_data = None  # 指数数据
         self.stock_codes = []
         
         # 查询执行器（在数据加载后创建）
@@ -73,46 +71,49 @@ class ScreenerOrchestrator(LoggerMixin):
             return False
         
         try:
-            # 1. 加载原始市场数据（不过滤）
-            logger.info("\n" + "=" * 60)
-            logger.info("步骤 1/3: 加载市场数据")
-            logger.info("=" * 60)
-            self.data, self.stock_codes = self.data_loader.load_raw_market_data()
+            # 0. 设置全局观察期约束（用于 ToolStep 参数验证）
+            ToolStep.set_observation_days(self.settings.observation_days)
+            logger.info(f"🔧 设置工具窗口参数上限：window <= {self.settings.observation_days} (observation_days)")
             
-            # 2. 初始化所有组件
+            # 1. 初始化所有组件（不加载数据）
             logger.info("\n" + "=" * 60)
-            logger.info("步骤 2/3: 初始化Agent组件")
+            logger.info("步骤 1/2: 初始化Agent组件")
             logger.info("=" * 60)
-            components = self.component_initializer.initialize_all()
+            self.component_initializer.initialize_all()
             
-            # 3. 创建 Bridge 工具和 Tool Provider（暂时使用全量数据）
+            # 2. 创建 Bridge 工具和 Tool Provider（数据将在 StockPoolService 中加载）
             logger.info("\n" + "=" * 60)
-            logger.info("步骤 3/3: 创建工具层")
+            logger.info("步骤 2/2: 创建工具层（占位符）")
             logger.info("=" * 60)
+            
+            # 暂时使用空数据，实际数据将在 StockPoolService.apply_filter() 中加载
+            def get_data():
+                data_tuple = (self.data, self.index_data)
+                return data_tuple
+            
             self.component_initializer.create_bridge_tools(
-                data_fn=lambda: self.data,
+                data_fn=get_data,
                 stock_codes=self.stock_codes
             )
             self.component_initializer.create_tool_provider()
             
-            # 4. 创建查询执行器
+            # 3. 创建查询执行器
             self.query_executor = QueryExecutor(
                 agent=None,  # 延迟创建
                 initial_files=None,  # 将在创建Agent时设置
                 session_manager=self.session_manager,
                 telemetry=self.telemetry,
-                planner=self.planner,
                 quality_evaluator=self.quality_evaluator,
                 settings=self.settings,
                 hooks=self.hooks,  # 传入 HookExecutor 实例
             )
             
-            # 5. 深度模式下立即创建 Agent
+            # 4. 深度模式下立即创建 Agent
             if self.settings.harness.deep_thinking:
                 self._create_agent()
             
             logger.info("\n" + "=" * 60)
-            logger.info("✅ 系统初始化完成")
+            logger.info("✅ 系统初始化完成（数据将在 StockPoolService 中加载）")
             logger.info("=" * 60)
             return True
             
@@ -121,11 +122,23 @@ class ScreenerOrchestrator(LoggerMixin):
             return False
     
     def _create_agent(self, query: str | None = None):
-        """创建 Agent.
+        """创建或复用 Agent.
         
         Args:
             query: 用户查询（可选），用于智能选择工具
         """
+        # Deep Mode: Agent 已预创建，直接返回
+        if self.settings.harness.deep_thinking and self.agent:
+            logger.debug("Reusing pre-created deep thinking agent")
+            return
+        
+        # Quick Mode: 检查是否可以复用
+        if not self.settings.harness.deep_thinking and self.agent:
+            logger.debug("Reusing quick mode agent")
+            return
+        
+        # 创建新 Agent
+        logger.info(f"Creating new agent (deep_thinking={self.settings.harness.deep_thinking})...")
         self.agent, self.initial_files = self.component_initializer.create_agent(
             llm=self.component_initializer.llm,
             tool_provider=self.component_initializer.tool_provider,
@@ -187,7 +200,6 @@ class ScreenerOrchestrator(LoggerMixin):
                 params = adjusted_params
                 logger.warning(f"⚠️ 重试第 {attempt + 1} 次...")
         
-        from infrastructure.errors.exceptions import ToolExecutionError
         raise ToolExecutionError(
             f"工具 {tool_name} 重试 {max_attempts} 次后仍失败",
             error_code="TOOL_RETRY_EXHAUSTED",

@@ -2,13 +2,17 @@
 
 定义通用的 QualityEvaluator 协议，并提供选股领域的 ScreeningQualityEvaluator 实现。
 支持 Protocol 设计，便于领域扩展。
+
+质量评估标准从 .stock_asking/skills/quality-criteria/SKILL.md 动态加载，
+避免硬编码评分规则，便于灵活调整。
 """
 
 from __future__ import annotations
 
 import json
+import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -39,16 +43,36 @@ class QualityEvaluator(Protocol):
 
 @dataclass
 class EvaluationThresholds:
-    """评估阈值配置."""
+    """评估阈值配置（从 SKILL.md 解析）."""
 
+    # 候选数量阈值
+    candidate_count_ranges: list[tuple[tuple[int, int], float]] = field(default_factory=list)
+    
+    # 行业分散度阈值
+    industry_diversity_thresholds: list[tuple[float, float]] = field(default_factory=list)
+    
+    # 回测指标阈值
     min_sharpe_ratio: float = 0.0
     max_drawdown_threshold: float = 0.30
+    min_win_rate: float = 0.50
+    
+    # 权重配置
+    weights: dict[str, float] = field(default_factory=lambda: {
+        "candidate_count": 0.4,
+        "industry_diversity": 0.2,
+        "backtest_metrics": 0.2,
+        "screening_logic": 0.2,
+    })
+    
+    # 决策阈值
+    pass_threshold: float = 0.7
+    warning_threshold: float = 0.5
 
 
 class ScreeningQualityEvaluator:
     """选股领域的质量评估器 - 实现 QualityEvaluator 协议.
     
-    从 reflection.md 加载评估规则，支持用户动态调整。
+    从 quality-criteria.md 加载评估规则，支持用户动态调整。
     增强版：多维度评估（候选数量/行业多样性/代码规范性）
     """
     
@@ -56,41 +80,41 @@ class ScreeningQualityEvaluator:
         """初始化评估器.
         
         Args:
-            rules_dir: Rules 目录路径，默认从 app/setting/rules 加载
+            rules_dir: Rules 目录路径，默认从 .stock_asking/rules 加载
             thresholds: 评估阈值配置，为 None 时使用默认值
         """
         if rules_dir is None:
-            # 使用项目根目录的 app/setting/rules（绝对路径）
+            # 使用项目根目录的 .stock_asking/rules（绝对路径）
             # quality_evaluator.py -> quality/ -> agent/ -> src/ -> 项目根目录
             current_file = Path(__file__).resolve()
-            project_root = current_file.parent.parent.parent
-            self.rules_dir = project_root / "app" / "setting" / "rules"
+            project_root = current_file.parent.parent.parent.parent  # 需要4层
+            self.rules_dir = project_root / ".stock_asking" / "rules"
             
             logger.debug(f"Rules dir: {self.rules_dir}")
             logger.debug(f"Project root: {project_root}")
         else:
             self.rules_dir = rules_dir
         
-        self.reflection_rules = self._load_reflection_rules()
+        self.quality_criteria = self._load_quality_criteria()
         self.thresholds = thresholds or EvaluationThresholds()
     
-    def _load_reflection_rules(self) -> str:
-        """加载 reflection.md 内容.
+    def _load_quality_criteria(self) -> str:
+        """加载 quality-criteria.md 内容.
         
         Returns:
-            reflection.md 的文本内容
+            quality-criteria.md 的文本内容
         """
-        reflection_file = self.rules_dir / "reflection.md"
-        if not reflection_file.exists():
-            logger.warning(f"reflection.md 不存在: {reflection_file}")
+        criteria_file = self.rules_dir / "quality-criteria.md"
+        if not criteria_file.exists():
+            logger.warning(f"quality-criteria.md 不存在: {criteria_file}")
             return ""
         
         try:
-            content = reflection_file.read_text(encoding="utf-8")
-            logger.info(f"已加载 reflection.md ({len(content)} 字符)")
+            content = criteria_file.read_text(encoding="utf-8")
+            logger.info(f"已加载 quality-criteria.md ({len(content)} 字符)")
             return content
         except Exception as e:
-            logger.error(f"加载 reflection.md 失败: {e}")
+            logger.error(f"加载 quality-criteria.md 失败: {e}")
             return ""
     
     def evaluate(self, query: str, result: dict[str, Any]) -> dict[str, Any]:
@@ -118,7 +142,6 @@ class ScreeningQualityEvaluator:
                     for tool_call in msg.tool_calls:
                         if tool_call.get("name") == "run_screening":
                             try:
-                                import json
                                 args = tool_call.get("args", {})
                                 if "screening_logic_json" in args:
                                     # 找到了工具调用，但需要从返回结果中获取 candidates
@@ -129,7 +152,6 @@ class ScreeningQualityEvaluator:
                 # 尝试从 content 中解析 JSON
                 if hasattr(msg, "content") and msg.content:
                     try:
-                        import json
                         content_str = msg.content if isinstance(msg.content, str) else str(msg.content)
                         if "candidates" in content_str:
                             # 尝试提取 JSON
@@ -150,13 +172,13 @@ class ScreeningQualityEvaluator:
         all_issues.extend(issues)
         all_suggestions.extend(suggestions)
         
-        # 如果候选数量为 0，直接返回低分
+        # 如果候选数量为 0，返回低分但不强制重试（避免死循环）
         if candidate_count == 0:
             return {
                 "quality_score": 0.0,
                 "issues": all_issues,
                 "suggestions": all_suggestions,
-                "should_retry": True,
+                "should_retry": False,  # 不强制重试，让 Agent 自行决定
                 "candidate_count": candidate_count,
             }
         
@@ -185,20 +207,34 @@ class ScreeningQualityEvaluator:
             else:
                 scores.append(1.0)
         
-        # 计算综合得分（加权平均）
-        weights = [0.4, 0.2, 0.2, 0.2] if script_code else [0.5, 0.3, 0.2]
-        weights = weights[:len(scores)]  # 确保权重数量匹配
-        quality_score = sum(s * w for s, w in zip(scores, weights, strict=False))
+        # 计算综合得分（使用 SKILL.md 中定义的权重）
+        weights = self.thresholds.weights
+        weight_list = []
+        score_keys = ["candidate_count", "industry_diversity", "backtest_metrics"]
+        if script_code:
+            score_keys.append("screening_logic")
+        
+        for key in score_keys:
+            if key in weights:
+                weight_list.append(weights[key])
+        
+        # 归一化权重
+        total_weight = sum(weight_list)
+        if total_weight > 0:
+            weight_list = [w / total_weight for w in weight_list]
+        
+        quality_score = sum(s * w for s, w in zip(scores, weight_list, strict=False))
         quality_score = max(0.0, min(1.0, quality_score))
         
-        should_retry = quality_score < 0.5 and len(all_suggestions) > 0
+        # 使用 SKILL.md 中定义的决策阈值
+        should_retry = quality_score < self.thresholds.warning_threshold and len(all_suggestions) > 0
         
         return {
             "quality_score": quality_score,
             "issues": all_issues,
             "suggestions": all_suggestions,
             "should_retry": should_retry,
-            "reflection_rules": self.reflection_rules,
+            "quality_criteria": self.quality_criteria,  # 返回评估规则供 Agent 参考
             "candidate_count": candidate_count,
             "metrics": {
                 "industry_diversity_score": industry_diversity_score,
@@ -230,7 +266,6 @@ class ScreeningQualityEvaluator:
             return 0.0
         
         # 计算熵值（Entropy）作为多样性指标
-        import math
         entropy = 0.0
         for count in industry_counts.values():
             p = count / total
@@ -246,7 +281,8 @@ class ScreeningQualityEvaluator:
     def _evaluate_candidate_count(self, count: int) -> tuple[float, list[str], list[str]]:
         """评估候选股票数量.
         
-        注意：候选数量控制已通过 rules/*.md 实现，此方法仅做基本检查。
+        注意：具体的数量标准由 quality-criteria.md 定义，Agent 自行判断。
+        此方法只做基本的技术检查。
         """
         issues = []
         suggestions = []
@@ -254,35 +290,42 @@ class ScreeningQualityEvaluator:
 
         if count == 0:
             issues.append("筛选结果为空，未找到符合条件的股票")
-            suggestions.append("放宽筛选条件（如降低涨幅阈值、扩大行业范围）")
-            suggestions.append("检查筛选逻辑是否有误")
-            suggestions.append("考虑减少技术指标的约束条件")
+            suggestions.append(
+                "可能原因：\n"
+                "  1. 筛选条件过于严格\n"
+                "  2. 多个条件同时满足的股票极少\n"
+                "  3. 当前市场环境下无符合该策略的股票\n"
+                "建议：参考 quality_criteria 中的标准，放宽阈值或减少约束条件数量"
+            )
             return 0.0, issues, suggestions
 
-        # 候选数量控制由 Agent 根据 reflection.md 规则自行判断
-        # 这里不做具体数值限制
+        # 具体数量评估由 Agent 根据 quality_criteria 自行判断
         return score, issues, suggestions
 
     def _evaluate_industry_diversity_score(
         self, diversity_score: float
     ) -> tuple[float, list[str], list[str]]:
-        """评估行业多样性得分."""
+        """评估行业多样性得分.
+        
+        注意：具体的分散度标准由 quality-criteria.md 定义，Agent 自行判断。
+        此方法只做基本的技术检查。
+        """
         issues = []
         suggestions = []
-
-        if diversity_score >= 0.5:
-            return 1.0, [], []
-        elif diversity_score >= 0.3:
-            return 0.85, [], []
-        else:
+        
+        # 基本检查：如果多样性极低，给出警告
+        if diversity_score < 0.3:
             issues.append(f"行业集中度过高（多样性得分 {diversity_score:.2f}），缺乏分散化")
-            suggestions.append("扩大行业范围以降低集中度风险")
+            suggestions.append("参考 quality_criteria 中的标准，扩大行业范围以降低集中度风险")
             return 0.6, issues, suggestions
+        
+        # 其他情况由 Agent 根据 quality_criteria 自行判断
+        return 1.0, [], []
 
     def _evaluate_backtest_metrics(
         self, metrics: dict[str, float]
     ) -> tuple[float, list[str], list[str]]:
-        """评估回测指标."""
+        """评估回测指标（从 SKILL.md 动态加载规则）."""
         t = self.thresholds
         issues = []
         suggestions = []
@@ -302,6 +345,12 @@ class ScreeningQualityEvaluator:
             issues.append(f"最大回撤过大（{max_dd * 100:.1f}%），风险偏高")
             suggestions.append("增加止损机制或调整仓位管理")
             score *= 0.7
+        
+        win_rate = metrics.get("win_rate", 0.0)
+        if win_rate < t.min_win_rate:
+            issues.append(f"胜率过低（{win_rate * 100:.1f}%），策略有效性不足")
+            suggestions.append("重新审视选股逻辑或调整参数")
+            score *= 0.8
 
         return score, issues, suggestions
     

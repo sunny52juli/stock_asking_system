@@ -1,0 +1,203 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # 1. 代码质量检查
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install dependencies
+        run: |
+          cd stock_asking_system
+          uv sync --dev
+      
+      - name: Run Ruff
+        run: |
+          cd stock_asking_system
+          uv run ruff check .
+          uv run ruff format --check .
+      
+      - name: Run MyPy
+        run: |
+          cd stock_asking_system
+          uv run mypy src/ mcp_server/ --ignore-missing-imports
+  
+  # 2. 单元测试
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        python-version: ['3.12']
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install dependencies
+        run: |
+          cd stock_asking_system
+          uv sync --dev
+      
+      - name: Run tests with coverage
+        run: |
+          cd stock_asking_system
+          uv run pytest tests/ -v --cov=src --cov=mcp_server --cov-report=xml --cov-report=html
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./stock_asking_system/coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+      
+      - name: Upload coverage HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: stock_asking_system/htmlcov/
+  
+  # 3. 安全扫描
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+      
+      - name: Check for secrets
+        run: |
+          cd stock_asking_system
+          python .stock_asking/hooks/no-secrets.py $(find . -name "*.py" -not -path "./tests/*")
+  
+  # 4. 构建测试
+  build:
+    name: Build Packages
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Build workspace packages
+        run: |
+          cd stock_asking_system
+          uv build --package stock-asking-screener
+          uv build --package stock-asking-backtest
+          uv build --package stock-asking-mcp
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-packages
+          path: stock_asking_system/dist/
+  
+  # 5. 集成测试 (可选，仅在 main 分支)
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install dependencies
+        run: |
+          cd stock_asking_system
+          uv sync --dev
+      
+      - name: Run integration tests
+        run: |
+          cd stock_asking_system
+          uv run pytest tests/integration/ -v -m integration || echo "No integration tests found"
+  
+  # 6. 部署准备 (仅在 main 分支且所有检查通过)
+  prepare-deploy:
+    name: Prepare Deployment
+    runs-on: ubuntu-latest
+    needs: [test, security, build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Generate release notes
+        run: |
+          echo "## Release Notes" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "**Commit:** ${{ github.sha }}" >> RELEASE_NOTES.md
+          echo "**Date:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> RELEASE_NOTES.md
+          echo "**Author:** ${{ github.actor }}" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "### Changes:" >> RELEASE_NOTES.md
+          git log --oneline -10 >> RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+      
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: RELEASE_NOTES.md

@@ -2,8 +2,9 @@
 
 from datetime import datetime, timedelta
 from typing import Optional
+import numpy as np
 
-
+from datahub.calendar_utils import calculate_date_offset
 def get_holding_period_end_date(screening_date: str, holding_days: int) -> str:
     """获取持有期结束日期
     
@@ -14,7 +15,6 @@ def get_holding_period_end_date(screening_date: str, holding_days: int) -> str:
     Returns:
         持有期结束日期 (YYYYMMDD)
     """
-    from src.screening.utils import calculate_date_offset
     return calculate_date_offset(screening_date, holding_days, forward=False)
 
 
@@ -74,7 +74,6 @@ def calculate_sharpe_ratio(returns: list[float], risk_free_rate: float = 0.03) -
     Returns:
         夏普比率
     """
-    import numpy as np
     
     if not returns or len(returns) < 2:
         return 0.0

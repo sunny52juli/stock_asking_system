@@ -1,5 +1,6 @@
 """Skills 加载器 - 三层渐进加载机制.
 
+from pathlib import Path
 - Layer 1: YAML frontmatter（metadata）- 始终加载到 system prompt
 - Layer 2: Markdown 正文（instructions）- 匹配查询时加载
 - Layer 3: 资源文件（REFERENCE.md, scripts/）- 执行时按需加载
@@ -48,7 +49,6 @@ class SkillLoader:
     """Skills 加载器.
 
     使用示例：
-        from pathlib import Path
         project_root = Path(__file__).resolve().parent.parent.parent
         loader = SkillLoader(skills_dir=project_root / ".stock_asking" / "skills")
         # 加载所有 skills 的 metadata（Layer 1）

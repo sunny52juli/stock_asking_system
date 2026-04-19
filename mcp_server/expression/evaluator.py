@@ -5,12 +5,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-import pandas as pd
-
 from .namespace import NamespaceBuilder
 from .security import validate_expression
 
 
+from .security import wrap_namespace
 class ExpressionParser:
     """表达式解析器.
     
@@ -117,9 +116,12 @@ class ExpressionEvaluator:
         # 5. 推断并添加缺失变量
         namespace = NamespaceBuilder.infer_and_add_variables(namespace, data, variables)
         
-        # 6. 评估表达式
+        # 6. 应用三层安全防护
+        safe_namespace = wrap_namespace(namespace)
+        
+        # 7. 评估表达式（使用安全命名空间）
         try:
-            result = eval(parsed_expr, {"__builtins__": {}}, namespace)
+            result = eval(parsed_expr, {"__builtins__": {}}, safe_namespace)
             
             # 确保返回 Series
             if not isinstance(result, pd.Series):

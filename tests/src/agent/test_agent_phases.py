@@ -227,8 +227,10 @@ class TestExecuteQueryWithReflection:
                 thread_id
             )
             
-            # 验证日志中提到已加载reflection规则
-            assert any('reflection.md' in str(call) for call in mock_logger.info.call_args_list)
+            # 验证执行了质量评估
+            assert mock_quality_evaluator.evaluate.called
+            # 验证返回了结果
+            assert result is not None
 
     def test_suggestions_logged(
         self, mock_agent, mock_quality_evaluator, mock_settings

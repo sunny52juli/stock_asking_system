@@ -1,5 +1,6 @@
 """安全命名空间包装器.
 
+import logging
 提供两层防御，防止 eval() 沙箱逃逸：
 
 第一层（轻量）：sanitize_namespace()
@@ -22,11 +23,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    import numpy as np
-    import pandas as pd
+, Any
 
 
 # 允许的基础类型（无需包装）
@@ -291,20 +288,17 @@ def wrap_safe(obj: Any) -> Any:
         return obj
 
     # 检查是否是数值类型
-    import numpy as np
 
     if isinstance(obj, SAFE_BUILTIN_TYPES + (np.integer, np.floating, np.bool_)):
         return obj
 
     # 如果是 numpy 数组，转换为 Series 后包装
     if isinstance(obj, np.ndarray):
-        import pandas as pd
 
         return SafeSeriesWrapper(pd.Series(obj))
 
     # 如果是 pandas Series 或 DataFrame，包装
     try:
-        import pandas as pd
 
         if isinstance(obj, pd.Series):
             return SafeSeriesWrapper(obj)
@@ -353,8 +347,6 @@ def validate_namespace_types(namespace: dict[str, Any]) -> list[str]:
     Returns:
         危险对象对应的键名列表（空列表表示全部安全）
     """
-    import numpy as np
-    import pandas as pd
 
     dangerous: list[str] = []
 
@@ -413,8 +405,6 @@ def sanitize_namespace(namespace: dict[str, Any]) -> dict[str, Any]:
     Returns:
         过滤后的安全命名空间副本
     """
-    import numpy as np
-    import pandas as pd
 
     safe: dict[str, Any] = {}
     for key, value in namespace.items():
@@ -433,7 +423,6 @@ def sanitize_namespace(namespace: dict[str, Any]) -> dict[str, Any]:
             # 允许函数（如 np.abs、np.log 等）进入命名空间
             safe[key] = value
         else:
-            import logging
 
             logging.getLogger(__name__).debug(
                 "eval namespace 过滤：移除非白名单类型变量 %s (%s)", key, type(value).__name__

@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import pandas as pd
-
-if TYPE_CHECKING:
-    from datahub.core.repository import Repository
-    from datahub.core.dataset import Dataset
+from datahub.core.repository import Repository
+from datahub.core.dataset import Dataset
+from datahub.core.query import Query
 
 
 def load_with_date_or_range(
@@ -21,7 +17,7 @@ def load_with_date_or_range(
     codes: list[str] | None = None,
     fields: list[str] | None = None,
     index_code: str | None = None,
-) -> pd.DataFrame:
+) -> "pl.DataFrame":
     """Load data supporting both single date and date range.
     
     This eliminates the repetitive if/else pattern in every domain method.
@@ -37,13 +33,11 @@ def load_with_date_or_range(
         index_code: Optional index code
         
     Returns:
-        DataFrame with requested data
+        Polars DataFrame with requested data
         
     Raises:
         ValueError: If neither date nor (start_date, end_date) is provided
     """
-    from datahub.core.query import Query
-    
     if date is not None:
         return repo.load(
             Query(

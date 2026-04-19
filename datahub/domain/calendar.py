@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+from datetime import timedelta
+
+import pandas as pd
 import exchange_calendars as xcals
-
-
 class Calendar:
     """Trading calendar using exchange_calendars (XSHG: Shanghai). Implements CalendarProtocol."""
 
@@ -33,7 +35,6 @@ class Calendar:
             return [ts.strftime("%Y%m%d") for ts in sessions]
         except Exception as e:
             # Log error for debugging
-            import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Failed to get trade dates for {start_date}~{end_date}: {e}")
             return []
@@ -63,8 +64,6 @@ class Calendar:
             
             # Strategy: Get all sessions up to before_date, then take the last one before before_date
             # We need to go back a bit to ensure we find at least one session
-            from datetime import timedelta
-            import pandas as pd
             
             before_dt = pd.Timestamp(before_ts)
             # Go back 30 days to ensure we find a trading day
@@ -85,7 +84,6 @@ class Calendar:
             return None
         except Exception as e:
             # Log error for debugging
-            import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Failed to get latest trade date before {before_date}: {e}")
             return None

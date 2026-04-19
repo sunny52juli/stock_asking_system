@@ -3,15 +3,25 @@
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING, Literal
+import sys
+from pathlib import Path
 
-import numpy as np
+# Add project root to path if needed for direct import
+project_root = Path(__file__).parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import pandas as pd
+import numpy as np
+try:
+    import polars as pl
+except ImportError:
+    pl = None
 
-if TYPE_CHECKING:
-    from datahub.protocols import StockProtocol
+from datahub.protocols import StockProtocol
 
-# Built-in factor registry: factor_name -> spec
+# Import directly from polars_tools module file to avoid circular import through utils.__init__
+from utils.polars_tools import pivot_wide
 _FACTOR_REGISTRY: dict[str, dict] = {
     "momentum_1m": {
         "description": "1个月价格动量(近21日收益率)",
@@ -83,15 +93,30 @@ def _to_factor_list(factors: str | list[str]) -> list[str]:
 
 
 def _long_to_wide(price_df: pd.DataFrame, col: str) -> pd.DataFrame:
-    """Pivot long-format price DataFrame to wide (trade_date x ts_code)."""
+    """Pivot long-format price DataFrame to wide (trade_date x ts_code).
+    
+    Uses polars for better performance on large datasets.
+    """
     if "trade_date" not in price_df.columns or "ts_code" not in price_df.columns:
         return pd.DataFrame()
     if col not in price_df.columns:
         return pd.DataFrame()
-    wide = price_df.pivot_table(index="trade_date", columns="ts_code", values=col, aggfunc="last")
-    wide.index = wide.index.astype(str)
-    wide = wide.sort_index()
-    return wide
+    
+    # Use polars for pivot operation
+    try:
+        
+        # Convert to polars if needed
+        price_pl = pl.from_pandas(price_df) if hasattr(price_df, 'to_pandas') else price_df
+        wide_pl = pivot_wide(price_pl, col)
+        
+        # Convert back to pandas for compatibility
+        return wide_pl.to_pandas()
+    except (ImportError, Exception):
+        # Fallback to pandas if polars is not available or fails
+        wide = price_df.pivot_table(index="trade_date", columns="ts_code", values=col, aggfunc="last")
+        wide.index = wide.index.astype(str)
+        wide = wide.sort_index()
+        return wide
 
 
 def _compute_factor(price_df: pd.DataFrame, factor_name: str) -> pd.Series:

@@ -1,16 +1,13 @@
 """股票池筛选器 - 根据配置过滤股票池."""
 
 from __future__ import annotations
-
 import pandas as pd
-from pathlib import Path
-from typing import TYPE_CHECKING
+import polars as pl
 
 from infrastructure.logging.logger import get_logger
 
-if TYPE_CHECKING:
-    from infrastructure.config.settings import StockPoolConfig
 
+from infrastructure.config.settings import StockPoolConfig
 logger = get_logger(__name__)
 
 
@@ -160,72 +157,82 @@ class StockPoolFilter:
         if not stock_codes:
             return price_df
         
-        # 先过滤到股票池
-        df = price_df[price_df["ts_code"].isin(stock_codes)].copy()
+        # Polars: is_in() 代替 isin()
+        # 检查是否是真正的 polars DataFrame（有 filter 且没有 loc）
+        if hasattr(price_df, 'filter') and not hasattr(price_df, 'loc'):
+            df = price_df.filter(pl.col("ts_code").is_in(stock_codes))
+        else:
+            df = price_df[price_df["ts_code"].isin(stock_codes)].copy()
         before_count = len(df)
-        before_stock_count = df["ts_code"].nunique()
+        # Polars: n_unique() 代替 nunique()
+        ts_code_col = df["ts_code"]
+        before_stock_count = ts_code_col.n_unique() if hasattr(ts_code_col, 'n_unique') else ts_code_col.nunique()
         logger.info(f"📊 开始价格数据过滤，共 {before_stock_count} 只股票，{before_count} 条记录")
         
         filtered_stocks = set(stock_codes)  # 待过滤的股票集合
         
         # 按股票分组，计算每只股票的统计量
-        stock_stats = df.groupby("ts_code").agg({
-            "close": ["max", "min"],
-            "vol": "max" if "vol" in df.columns else lambda x: None,
-            "amount": "max" if "amount" in df.columns else lambda x: None,
-            "turnover_rate": "max" if "turnover_rate" in df.columns else lambda x: None,
-        })
-        
-        # 扁平化列名
-        stock_stats.columns = ["_".join(col).strip("_") for col in stock_stats.columns.values]
+        # Polars: group_by() 代替 groupby()
+        stock_stats = df.group_by("ts_code").agg([
+            pl.col("close").max().alias("close_max"),
+            pl.col("close").min().alias("close_min"),
+            pl.col("vol").max().alias("vol_max") if "vol" in df.columns else pl.lit(None).alias("vol_max"),
+            pl.col("amount").max().alias("amount_max") if "amount" in df.columns else pl.lit(None).alias("amount_max"),
+            pl.col("turnover_rate").max().alias("turnover_rate_max") if "turnover_rate" in df.columns else pl.lit(None).alias("turnover_rate_max"),
+        ])
+        # 转换为 pandas 用于后续过滤（仅此处转换）
+        stock_stats_pd = stock_stats.to_pandas().set_index("ts_code")
         
         # 价格过滤：观察期内最高价 >= min_price
-        if "close_max" in stock_stats.columns and self.config.min_price > 0:
+        if "close_max" in stock_stats_pd.columns and self.config.min_price > 0:
             before = len(filtered_stocks)
-            valid_stocks = stock_stats[stock_stats["close_max"] >= self.config.min_price].index
+            valid_stocks = stock_stats_pd[stock_stats_pd["close_max"] >= self.config.min_price].index
             filtered_stocks = filtered_stocks & set(valid_stocks)
             removed = before - len(filtered_stocks)
             if removed > 0:
                 logger.info(f"   ✅ 最低价过滤(观察期最高价>={self.config.min_price}元)：-{removed} 只，剩余 {len(filtered_stocks)} 只")
         
         # 价格过滤：观察期内最低价 <= max_price
-        if "close_min" in stock_stats.columns and self.config.max_price < 999999:
+        if "close_min" in stock_stats_pd.columns and self.config.max_price < 999999:
             before = len(filtered_stocks)
-            valid_stocks = stock_stats[stock_stats["close_min"] <= self.config.max_price].index
+            valid_stocks = stock_stats_pd[stock_stats_pd["close_min"] <= self.config.max_price].index
             filtered_stocks = filtered_stocks & set(valid_stocks)
             removed = before - len(filtered_stocks)
             if removed > 0:
                 logger.info(f"   ✅ 最高价过滤(观察期最低价<={self.config.max_price}元)：-{removed} 只，剩余 {len(filtered_stocks)} 只")
         
         # 成交量过滤：观察期内最大成交量 >= min_vol
-        if "vol_max" in stock_stats.columns and self.config.min_vol > 0:
+        if "vol_max" in stock_stats_pd.columns and self.config.min_vol > 0:
             before = len(filtered_stocks)
-            valid_stocks = stock_stats[stock_stats["vol_max"] >= self.config.min_vol].index
+            valid_stocks = stock_stats_pd[stock_stats_pd["vol_max"] >= self.config.min_vol].index
             filtered_stocks = filtered_stocks & set(valid_stocks)
             removed = before - len(filtered_stocks)
             if removed > 0:
                 logger.info(f"   ✅ 成交量过滤(观察期最大成交量>={self.config.min_vol})：-{removed} 只，剩余 {len(filtered_stocks)} 只")
         
         # 成交金额过滤：观察期内最大成交额 >= min_amount
-        if "amount_max" in stock_stats.columns and self.config.min_amount > 0:
+        if "amount_max" in stock_stats_pd.columns and self.config.min_amount > 0:
             before = len(filtered_stocks)
-            valid_stocks = stock_stats[stock_stats["amount_max"] >= self.config.min_amount].index
+            valid_stocks = stock_stats_pd[stock_stats_pd["amount_max"] >= self.config.min_amount].index
             filtered_stocks = filtered_stocks & set(valid_stocks)
             removed = before - len(filtered_stocks)
             if removed > 0:
                 logger.info(f"   ✅ 成交额过滤(观察期最大成交额>={self.config.min_amount})：-{removed} 只，剩余 {len(filtered_stocks)} 只")
         
         # 换手率过滤：观察期内最大换手率 >= min_turnover
-        if "turnover_rate_max" in stock_stats.columns and self.config.min_turnover > 0:
+        if "turnover_rate_max" in stock_stats_pd.columns and self.config.min_turnover > 0:
             before = len(filtered_stocks)
-            valid_stocks = stock_stats[stock_stats["turnover_rate_max"] >= self.config.min_turnover].index
+            valid_stocks = stock_stats_pd[stock_stats_pd["turnover_rate_max"] >= self.config.min_turnover].index
             filtered_stocks = filtered_stocks & set(valid_stocks)
             removed = before - len(filtered_stocks)
             if removed > 0:
                 logger.info(f"   ✅ 换手率过滤(观察期最大换手率>={self.config.min_turnover}%)：-{removed} 只，剩余 {len(filtered_stocks)} 只")
         
         # 过滤 DataFrame
-        df = df[df["ts_code"].isin(filtered_stocks)].copy()
+        if hasattr(df, 'filter'):
+            df = df.filter(pl.col("ts_code").is_in(filtered_stocks))
+        else:
+            df = df[df["ts_code"].isin(filtered_stocks)].copy()
         after_count = len(df)
         after_stock_count = len(filtered_stocks)
         
@@ -258,12 +265,23 @@ class StockPoolFilter:
         
         # 获取最新一天的市值数据
         latest_date = price_df["trade_date"].max()
-        latest_data = price_df[
-            (price_df["trade_date"] == latest_date) & 
-            (price_df["ts_code"].isin(stock_codes))
-        ]
+        # 确保使用正确的 API（pandas vs polars）
+        if hasattr(price_df, 'filter') and not hasattr(price_df, 'loc'):
+            # Polars DataFrame + Polars Expr
+            latest_data = price_df.filter(
+                (pl.col("trade_date") == latest_date) & 
+                pl.col("ts_code").is_in(stock_codes)
+            )
+        else:
+            # Pandas DataFrame
+            latest_data = price_df[
+                (price_df["trade_date"] == latest_date) & 
+                (price_df["ts_code"].isin(stock_codes))
+            ]
         
-        if latest_data.empty:
+        # Polars: is_empty() 代替 .empty
+        latest_is_empty = (hasattr(latest_data, 'is_empty') and latest_data.is_empty()) or (hasattr(latest_data, 'empty') and latest_data.empty)
+        if latest_is_empty:
             return stock_codes
         
         filtered_stocks = set(stock_codes)
@@ -271,7 +289,12 @@ class StockPoolFilter:
         # 最小市值过滤
         if self.config.min_total_mv > 0:
             before = len(filtered_stocks)
-            valid_stocks = latest_data[latest_data["total_mv"] >= self.config.min_total_mv]["ts_code"].unique()
+            # Polars: filter() 代替布尔索引
+            if hasattr(latest_data, 'filter') and not hasattr(latest_data, 'loc'):
+                valid_stocks_pl = latest_data.filter(pl.col("total_mv") >= self.config.min_total_mv).select("ts_code").unique()
+                valid_stocks = valid_stocks_pl.to_series().to_list()
+            else:
+                valid_stocks = latest_data[latest_data["total_mv"] >= self.config.min_total_mv]["ts_code"].unique()
             filtered_stocks = filtered_stocks & set(valid_stocks)
             removed = before - len(filtered_stocks)
             if removed > 0:
@@ -280,7 +303,12 @@ class StockPoolFilter:
         # 最大市值过滤
         if self.config.max_total_mv < 999999999:
             before = len(filtered_stocks)
-            valid_stocks = latest_data[latest_data["total_mv"] <= self.config.max_total_mv]["ts_code"].unique()
+            # Polars: filter() 代替布尔索引
+            if hasattr(latest_data, 'filter') and not hasattr(latest_data, 'loc'):
+                valid_stocks_pl = latest_data.filter(pl.col("total_mv") <= self.config.max_total_mv).select("ts_code").unique()
+                valid_stocks = valid_stocks_pl.to_series().to_list()
+            else:
+                valid_stocks = latest_data[latest_data["total_mv"] <= self.config.max_total_mv]["ts_code"].unique()
             filtered_stocks = filtered_stocks & set(valid_stocks)
             removed = before - len(filtered_stocks)
             if removed > 0:
@@ -316,11 +344,16 @@ class StockPoolFilter:
             return stock_codes
         
         # 按股票分组，检查每只股票的数据完整性
-        subset_df = price_df[price_df["ts_code"].isin(stock_codes)]
-        stock_counts = subset_df.groupby("ts_code").size()
+        subset_df = price_df.filter(pl.col("ts_code").is_in(stock_codes))
+        stock_counts_pl = subset_df.group_by("ts_code").agg(pl.count().alias("count"))
+        stock_counts_pd = pd.Series(
+            stock_counts_pl["count"].to_list(),
+            index=stock_counts_pl["ts_code"].to_list(),
+            name="count"
+        )
         
         valid_stocks = []
-        for ts_code, count in stock_counts.items():
+        for ts_code, count in stock_counts_pd.items():
             missing_days = expected_days - count
             completeness = count / expected_days
             
@@ -330,7 +363,7 @@ class StockPoolFilter:
             if meets_completeness and meets_missing_days:
                 valid_stocks.append(ts_code)
         
-        before_count = len(stock_counts)
+        before_count = len(stock_counts_pd)
         after_count = len(valid_stocks)
         
         if before_count != after_count:

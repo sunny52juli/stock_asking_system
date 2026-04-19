@@ -8,6 +8,7 @@ from unittest.mock import patch
 from src.backtest.report import print_backtest_report, format_backtest_summary
 
 
+from src.backtest.report import _print_stock_table_detailed
 class TestPrintBacktestReport:
     """回测报告打印测试."""
 
@@ -103,7 +104,6 @@ class TestPrintBacktestReport:
 
     def test_print_stock_table_empty(self, capsys):
         """测试打印空股票表格."""
-        from src.backtest.report import _print_stock_table_detailed
         
         _print_stock_table_detailed([])
         captured = capsys.readouterr()
@@ -111,7 +111,6 @@ class TestPrintBacktestReport:
 
     def test_print_stock_table_with_data(self, capsys):
         """测试打印股票表格."""
-        from src.backtest.report import _print_stock_table_detailed
         
         stocks = [
             {

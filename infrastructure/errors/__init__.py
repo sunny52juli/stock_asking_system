@@ -23,8 +23,15 @@ from infrastructure.errors.exceptions import (
     LLMResponseError,
     LLMParseError,
 )
+from infrastructure.errors.error_handler import (
+    ErrorCode,
+    QuantError,
+    handle_error,
+    format_error_response,
+)
 
 __all__ = [
+    # 原有异常类
     "QuantSystemError",
     "DataError",
     "DataLoadError",
@@ -46,4 +53,10 @@ __all__ = [
     "LLMError",
     "LLMResponseError",
     "LLMParseError",
+    
+    # 新增统一错误处理
+    "ErrorCode",
+    "QuantError",
+    "handle_error",
+    "format_error_response",
 ]

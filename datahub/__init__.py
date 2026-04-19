@@ -46,6 +46,12 @@ from datahub.protocols import (
     StockProtocol,
 )
 
+# Polars availability flag
+try:
+    POLARS_AVAILABLE = True
+except ImportError:
+    POLARS_AVAILABLE = False
+
 __all__ = [
     "DataHub",
     "Stock",
@@ -66,4 +72,6 @@ __all__ = [
     "NewsProtocol",
     "CalendarProtocol",
     "DataNotFoundError",
+    # Polars
+    "POLARS_AVAILABLE",
 ]

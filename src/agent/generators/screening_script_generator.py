@@ -10,6 +10,11 @@ from utils.datetime_utils import format_date
 from utils.fs import ensure_dir, sanitize_filename
 
 
+from datahub.loaders import StockDataLoader
+from infrastructure.config.settings import get_settings
+from utils.screening.stock_screener import StockScreener
+import argparse
+import os
 class ScreeningScriptGenerator:
     """
     筛选脚本生成器
@@ -119,6 +124,9 @@ project_root = os.path.dirname(app_dir)  # 项目根目录
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# 导入 StockScreener
+from utils.screening.stock_screener import StockScreener
+
 
 # ==================== 筛选逻辑定义 ====================
 SCREENING_LOGIC = {logic_json}
@@ -136,9 +144,10 @@ def screen_with_data(data: pd.DataFrame, top_n: int = 20, screening_date: str = 
     """
     使用提供的数据执行筛选（仅依赖 core.stock_screener）
     """
-    from utils.screening.stock_screener import StockScreener
-
-    screener = StockScreener(data, screening_date=screening_date)
+    # 尝试使用注入的指数数据（回测模式）
+    index_data = globals().get('INDEX_DATA', None)
+    
+    screener = StockScreener(data, screening_date=screening_date, index_data=index_data)
     return screener.execute_screening(
         screening_logic=SCREENING_LOGIC,
         top_n=top_n,
@@ -148,8 +157,6 @@ def screen_with_data(data: pd.DataFrame, top_n: int = 20, screening_date: str = 
 
 def main():
     """主函数 - 独立运行时使用 (数据来自 core.data_loading)"""
-    import argparse
-    import os
 
     logic_name = SCREENING_LOGIC.get("name", "未命名筛选")
     
@@ -166,12 +173,10 @@ def main():
         print("\\n💡 提示: 如果已有缓存数据，脚本仍可能正常运行")
         print("-" * 60)
     
-    from datahub.loaders import StockDataLoader
 
     print("📊 加载市场数据...")
     try:
         # 独立运行时使用最新交易日期，不依赖 backtest_config
-        from infrastructure.config.settings import get_settings
         settings = get_settings()
         loader = StockDataLoader()
         data = loader.load_market_data(observation_days=settings.observation_days)

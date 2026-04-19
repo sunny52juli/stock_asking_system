@@ -7,13 +7,15 @@
 from __future__ import annotations
 
 import importlib.util
+import traceback
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
-from datetime import datetime
 
 import pandas as pd
 
 from datahub.loaders import load_raw_market_data
+from src.backtest.returns import ReturnsCalculator
 from src.screening.executor import ScreeningExecutor
 from infrastructure.logging.logger import get_logger
 
@@ -48,6 +50,7 @@ class BacktestEngine:
         self.observation_days = observation_days
         
         self.data: Optional[pd.DataFrame] = None
+        self.index_data: Optional[pd.DataFrame] = None
         self.results: list[dict[str, Any]] = []
     
     def load_raw_data(self) -> bool:
@@ -60,7 +63,6 @@ class BacktestEngine:
             logger.info(f"📊 加载回测原始数据（筛选日期：{self.screening_date}）")
             
             # 计算日期范围（需要包含持有期未来数据）
-            from datetime import datetime, timedelta
             end_dt = datetime.strptime(self.screening_date, "%Y%m%d")
             # 结束日期 = 筛选日期 + 最大持有期 * 2（考虑非交易日，确保足够交易日）
             max_holding = max(self.holding_periods) if self.holding_periods else 20
@@ -87,8 +89,11 @@ class BacktestEngine:
                 # 检查是否有足够的未来数据
                 screen_dt = pd.to_datetime(self.screening_date, format="%Y%m%d")
                 max_future_needed = screen_dt + pd.Timedelta(days=max(self.holding_periods) * 2)
-                if actual_end < max_future_needed:
-                    logger.warning(f"   ⚠️ 数据不足：需要到 {max_future_needed.date()}，实际只到 {actual_end.date()}")
+                
+                # 将 actual_end 转换为 Timestamp 进行比较
+                actual_end_dt = pd.to_datetime(str(actual_end), format="%Y%m%d")
+                if actual_end_dt < max_future_needed:
+                    logger.warning(f"   ⚠️ 数据不足：需要到 {max_future_needed.date()}，实际只到 {actual_end_dt.date()}")
                     logger.warning(f"   建议：使用更早的筛选日期或更新数据")
             
             logger.info(f"✅ 数据加载完成：{len(self.data)} 条记录")
@@ -96,7 +101,6 @@ class BacktestEngine:
             
         except Exception as e:
             logger.error(f"❌ 数据加载失败：{e}")
-            import traceback
             traceback.print_exc()
             return False
     
@@ -126,6 +130,28 @@ class BacktestEngine:
             if not hasattr(module, "screen_with_data"):
                 raise AttributeError("脚本缺少 screen_with_data 函数")
             
+            # 如果有指数数据，包装 screen_with_data 函数以传递指数数据
+            if self.index_data is not None:
+                logger.info(f"📊 检测到指数数据 ({len(self.index_data)} 条记录)，注入到脚本")
+                original_screen_with_data = module.screen_with_data
+                index_data = self.index_data
+                
+                def patched_screen_with_data(data, top_n=20, screening_date=None):
+                    """包装函数，注入指数数据"""
+                    # 动态导入 StockScreener
+                    from utils.screening.stock_screener import StockScreener as Screener
+                    logger.debug(f"patched_screen_with_data 被调用，index_data: {type(index_data)}")
+                    screener = Screener(data, screening_date=screening_date, index_data=index_data)
+                    return screener.execute_screening(
+                        screening_logic=module.SCREENING_LOGIC,
+                        top_n=top_n,
+                        query=getattr(module, 'ORIGINAL_QUERY', '')
+                    )
+                
+                module.screen_with_data = patched_screen_with_data
+            else:
+                logger.warning("⚠️ engine.index_data 为 None，脚本将尝试自动加载指数数据")
+            
             # 执行筛选
             candidates = module.screen_with_data(
                 self.data,
@@ -144,7 +170,6 @@ class BacktestEngine:
             
         except Exception as e:
             logger.error(f"   ❌ 执行失败：{e}")
-            import traceback
             traceback.print_exc()
             
             return {
@@ -206,9 +231,19 @@ class BacktestEngine:
             logger.warning("⚠️ 没有可计算收益的结果")
             return []
         
-        from src.backtest.returns import ReturnsCalculator
+        # 确保数据是 Pandas MultiIndex 格式
+        data_for_returns = self.data
+        if hasattr(self.data, 'filter') and not hasattr(self.data, 'loc'):
+            # Polars -> Pandas MultiIndex 转换
+            logger.info("🔄 将 Polars DataFrame 转换为 Pandas MultiIndex...")
+            data_pd = self.data.to_pandas()
+            if 'ts_code' in data_pd.columns and 'trade_date' in data_pd.columns:
+                data_pd = data_pd.set_index(['ts_code', 'trade_date'])
+                data_pd = data_pd.sort_index()
+                data_for_returns = data_pd
+                logger.info(f"✅ 转换完成：{data_for_returns.shape}")
         
-        calculator = ReturnsCalculator(self.data, self.holding_periods)
+        calculator = ReturnsCalculator(data_for_returns, self.holding_periods)
         
         backtest_results = []
         for result in results:

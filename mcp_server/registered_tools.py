@@ -16,6 +16,12 @@ from typing import Any
 
 from mcp_server.auto_register import tool_registry
 
+# 导入所有工具模块，触发装饰器注册
+import mcp_server.executors.index_tools  # noqa: F401 - 指数相关工具（beta, alpha, outperform_rate等）
+# TODO: 导入其他工具模块
+# import mcp_server.executors.technical_tools  # 技术指标工具
+# import mcp_server.executors.statistical_tools  # 统计工具
+
 
 # ==================== 导出接口 ====================
 

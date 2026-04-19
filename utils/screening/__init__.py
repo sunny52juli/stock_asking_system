@@ -1,7 +1,8 @@
 """筛选工具模块."""
 
-from utils.screening.screening_tools import calculate_date_offset, count_trade_days, get_data_start_date
+from datahub.calendar_utils import calculate_date_offset, count_trade_days, get_data_start_date
 from utils.screening.strategy_helpers import get_strategy_config, get_strategy_templates, get_user_queries
+from utils.screening.screener_factory import create_screener, screen_stocks
 
 __all__ = [
     "calculate_date_offset",
@@ -10,4 +11,7 @@ __all__ = [
     "get_strategy_templates",
     "get_user_queries",
     "get_strategy_config",
+    # 统一筛选器接口
+    "create_screener",
+    "screen_stocks",
 ]

@@ -20,7 +20,19 @@ DatasetRegistry.register(
         FetchStep(
             api_name="daily",
             param_mapping={"trade_date": "date"},
-            fields=None,  # 返回所有字段
+            fields=[
+                "ts_code",
+                "trade_date",
+                "open",                # 开盘价
+                "high",                # 最高价
+                "low",                 # 最低价
+                "close",               # 收盘价
+                "pre_close",           # 昨收价
+                "change",              # 涨跌额
+                "pct_chg",             # 涨跌幅(%)
+                "vol",                 # 成交量(手)
+                "amount",              # 成交额(千元)
+            ],
             merge_on=["ts_code"],
         ),
         # Step 2: 基本信息合并

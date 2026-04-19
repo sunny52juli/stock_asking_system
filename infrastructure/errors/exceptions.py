@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+from utils.exceptions import DataLoadError, FactorCalculationError
 自定义异常类 - 量化系统异常层次结构
 
 解决问题：
@@ -7,7 +8,6 @@
 - 缺乏自定义异常类，难以区分不同类型的错误
 
 使用方法：
-    from utils.exceptions import DataLoadError, FactorCalculationError
 
     try:
         data = load_data()
