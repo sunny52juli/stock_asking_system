@@ -136,7 +136,7 @@ class ToolRegistry:
             验证后的参数字典
             
         Raises:
-            ValueError: 参数验证失败
+            ValueError: 参数验证失败（带智能建议）
         """
         if tool_name not in self._validators:
             raise ValueError(f"Unknown tool: {tool_name}")
@@ -146,7 +146,90 @@ class ToolRegistry:
             validated = validator(**params)
             return validated.model_dump()
         except Exception as e:
-            raise ValueError(f"参数验证失败 [{tool_name}]: {e}") from e
+            # 提供智能纠错建议
+            suggestion = self._get_param_suggestion(tool_name, params, str(e))
+            error_msg = f"参数验证失败 [{tool_name}]:\n{suggestion}"
+            raise ValueError(error_msg) from e
+    
+    def _get_param_suggestion(self, tool_name: str, params: dict, error_str: str) -> str:
+        """根据工具名称和错误信息提供智能参数建议.
+        
+        Args:
+            tool_name: 工具名称
+            params: 提供的参数字典
+            error_str: Pydantic 错误信息
+            
+        Returns:
+            友好的纠错建议
+        """
+        import re
+        
+        # 常见参数错误映射
+        common_mistakes = {
+            "rank_normalize": {
+                "values": "column",
+                "value": "column",
+            },
+            "rolling_mean": {
+                "n": "window",
+                "period": "window",
+                "periods": "window",
+            },
+            "rolling_std": {
+                "n": "window",
+                "period": "window",
+            },
+            "rsi": {
+                "n": "window",
+                "period": "window",
+            },
+            "macd": {
+                "fast_period": "fast",
+                "slow_period": "slow",
+                "signal_period": "signal",
+            },
+            "kdj": {
+                "n": "window",
+                "period": "window",
+            },
+        }
+        
+        # 检查是否有字段缺失错误
+        if "Field required" in error_str or "missing" in error_str.lower():
+            # 提取缺失的字段名
+            match = re.search(r"'(\w+)'", error_str)
+            if match:
+                missing_field = match.group(1)
+                
+                # 查找该工具的常见错误映射
+                if tool_name in common_mistakes:
+                    for wrong_name, correct_name in common_mistakes[tool_name].items():
+                        if wrong_name == missing_field:
+                            # 用户使用了错误的参数名
+                            provided_value = params.get(wrong_name, 'N/A')
+                            return (
+                                f"❌ 参数名错误：'{wrong_name}' 不是有效参数\n"
+                                f"✅ 正确参数名：'{correct_name}'\n"
+                                f"💡 示例：{{'{correct_name}': '{provided_value}'}}"
+                            )
+                        elif wrong_name in params and missing_field == correct_name:
+                            # 用户使用了旧参数名，但缺少正确参数名
+                            provided_value = params[wrong_name]
+                            return (
+                                f"❌ 缺少必需参数：'{correct_name}'\n"
+                                f"⚠️  检测到你可能使用了 '{wrong_name}'\n"
+                                f"✅ 请改为使用：'{correct_name}'\n"
+                                f"💡 示例：{{'{correct_name}': '{provided_value}'}}"
+                            )
+                
+                # 通用建议
+                return (
+                    f"❌ 缺少必需参数：'{missing_field}'\n"
+                    f"💡 提示：请检查工具 '{tool_name}' 的参数定义，确保使用正确的参数名"
+                )
+        
+        # 其他类型的验证错误
+        return f"验证错误：{error_str}\n💡 请检查参数类型和取值范围"
     
     def register_to_mcp(self, mcp_instance: Any) -> None:
         """将所有工具注册到 FastMCP 实例."""

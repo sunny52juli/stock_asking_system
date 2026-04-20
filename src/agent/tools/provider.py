@@ -12,6 +12,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from infrastructure.config.settings import get_settings
+from src.agent.harness.permissions import PermissionChecker
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,12 +45,39 @@ class ScreenerToolProvider:
         self._mcp_tools = mcp_tools
         self._bridge_tools = bridge_tools
         self._mcp_by_name = {t.name: t for t in mcp_tools}
-
+        
+        # 初始化权限检查器
+        settings = get_settings()
+        self._permission_checker = PermissionChecker.from_config(settings.permissions)
+        
         logger.debug(
             "ScreenerToolProvider initialized with %d MCP tools and %d bridge tools",
             len(mcp_tools),
             len(bridge_tools),
         )
+        logger.info(
+            f"🔒 权限控制已启用: allow={settings.permissions.allow}, deny={settings.permissions.deny}"
+        )
+
+    def _filter_tools_by_permission(self, tools: list[Any]) -> list[Any]:
+        """根据权限配置过滤工具列表.
+        
+        Args:
+            tools: 原始工具列表
+            
+        Returns:
+            过滤后的工具列表
+        """
+        filtered = []
+        for tool in tools:
+            tool_name = getattr(tool, 'name', '')
+            if self._permission_checker.is_allowed(tool_name):
+                filtered.append(tool)
+            else:
+                logger.warning(f"⚠️ 工具 '{tool_name}' 因权限限制被过滤")
+        
+        logger.debug(f"权限过滤: {len(tools)} -> {len(filtered)} 个工具")
+        return filtered
 
     def get_tools_for_agent(self, agent_name: str) -> list[Any]:
         """Return the tool set authorized for a specific agent.
@@ -61,7 +91,9 @@ class ScreenerToolProvider:
         # Special case: return all tools
         if agent_name == "all":
             tools = list(self._mcp_tools) + list(self._bridge_tools.values())
-            logger.debug("Returning ALL tools: %d total", len(tools))
+            # 应用权限过滤
+            tools = self._filter_tools_by_permission(tools)
+            logger.debug("Returning ALL tools after permission filter: %d total", len(tools))
             return tools
 
         spec = self._AGENT_TOOL_MAP.get(agent_name, {"mcp": [], "bridge": []})
@@ -70,21 +102,32 @@ class ScreenerToolProvider:
         # Add MCP tools
         mcp_names = spec["mcp"]
         if "__ALL__" in mcp_names:
-            tools.extend(self._mcp_tools)
-            logger.debug("Agent '%s' receives ALL %d MCP tools", agent_name, len(self._mcp_tools))
+            # 先获取所有 MCP 工具，再应用权限过滤
+            all_mcp_tools = self._filter_tools_by_permission(list(self._mcp_tools))
+            tools.extend(all_mcp_tools)
+            logger.debug("Agent '%s' receives ALL %d MCP tools (after permission filter)", agent_name, len(all_mcp_tools))
         else:
             for name in mcp_names:
                 if name in self._mcp_by_name:
-                    tools.append(self._mcp_by_name[name])
+                    tool = self._mcp_by_name[name]
+                    # 检查单个工具的权限
+                    if self._permission_checker.is_allowed(name):
+                        tools.append(tool)
+                    else:
+                        logger.warning(f"⚠️ MCP 工具 '{name}' 因权限限制被过滤")
             if mcp_names:
                 logger.debug(
-                    "Agent '%s' receives %d specific MCP tools", agent_name, len(mcp_names)
+                    "Agent '%s' receives %d specific MCP tools", agent_name, len(tools)
                 )
 
         # Add bridge tools
         for bridge_name in spec["bridge"]:
             if bridge_name in self._bridge_tools:
-                tools.append(self._bridge_tools[bridge_name])
+                # 检查 Bridge 工具的权限
+                if self._permission_checker.is_allowed(bridge_name):
+                    tools.append(self._bridge_tools[bridge_name])
+                else:
+                    logger.warning(f"⚠️ Bridge 工具 '{bridge_name}' 因权限限制被过滤")
             else:
                 logger.warning(
                     "Bridge tool '%s' requested by agent '%s' not found",
@@ -92,7 +135,7 @@ class ScreenerToolProvider:
                     agent_name,
                 )
 
-        logger.debug("Agent '%s' total tools: %d", agent_name, len(tools))
+        logger.debug("Agent '%s' total tools after permission filter: %d", agent_name, len(tools))
         return tools
 
     def get_tool_descriptions(self) -> list[dict[str, str]]:

@@ -126,12 +126,13 @@ graph TB
 - **Tool Provider**：统一管理MCP工具和本地Bridge工具
 - **Harness Framework**：Hooks/Rules/Permissions约束框架
   - **Hooks Engine**：三阶段钩子 (PreToolUse/PostToolUse/Stop)
-  - **Rules Loader**：Markdown规则动态注入到system prompt
+  - **Rules Loader**：Markdown规则动态注入到system prompt（完整参数传递链）
   - **Permissions**：基于fnmatch的工具白名单/黑名单
 - **Quality & Retry System**：质量评估与智能重试
-  - **Quality Evaluator**：多维度结果质量评分
+  - **Quality Evaluator**：多维度结果质量评分 + **参数错误自动检测**
   - **Smart Retry Manager**：错误分类+自适应参数调整
   - **Auto-fix Loop**：基于质量反馈的自动优化循环
+- **智能参数验证**：Pydantic 自动验证 + 智能纠错建议
 
 ### 3. Screening Engine - 股票筛选引擎
 
@@ -172,6 +173,7 @@ graph TB
 - **自动注册**：通过装饰器自动发现和注册工具函数
 - **传输协议**：支持stdio和SSE两种传输方式
 - **工具分类**：数据查询、指标计算、策略执行等
+- **智能参数验证**：Pydantic 自动验证 + 常见错误智能纠错建议
 
 ### 6. Infrastructure - 基础设施层
 
@@ -289,10 +291,6 @@ stock_asking_system/
    ↓
    (可选) 触发回测验证
 ```
-
-**关键优化**：
-- **数据共享**：多个策略查询共享同一份过滤后的数据，避免重复加载
-- **职责分离**：股票池过滤由独立的 `StockPoolService` 模块处理（位于 `src/agent/services/`），Orchestrator 只负责流程编排
 
 #### 2. 回测验证
 
@@ -710,43 +708,15 @@ harness:
 
 ### 工具调用拓扑结构
 
-量化工具的执行遵循严格的依赖关系，系统自动进行拓扑排序：
+系统自动识别工具依赖关系并按正确顺序执行：
 
-**基础数据层**（无依赖）：
-- `get_stock_data` - 获取股票时序数据
-- `rolling_mean`, `rolling_std` - 基础滚动统计
-- `pct_change` - 收益率计算
+**依赖层级**：
+1. **基础数据层**：`get_stock_data`, `rolling_mean`, `pct_change`
+2. **技术指标层**：`rsi`, `macd`（依赖收盘价）
+3. **指数相关层**：`beta`, `alpha`, `outperform_rate`（需股票+指数数据）
+4. **高级指标层**：`zscore_normalize`, `rank_normalize`（依赖基础指标）
 
-**技术指标层**（依赖基础数据）：
-- `rsi` - 相对强弱指标（需要收盘价）
-- `macd` - MACD 指标（需要收盘价）
-- `bollinger_bands` - 布林带（需要收盘价和标准差）
-
-**指数相关层**（依赖股票数据和指数数据）：
-- `beta` - Beta 系数（需要股票收益和指数收益）
-- `alpha` - Alpha 收益（需要 Beta 和指数收益）
-- `outperform_rate` - 超额收益频率（需要股票和指数收益对比）
-- `tracking_error` - 跟踪误差（需要股票和指数收益序列）
-- `information_ratio` - 信息比率（需要 Alpha 和 Tracking Error）
-- `correlation_with_index` - 与指数相关性（需要股票和指数收益）
-
-**高级指标层**（依赖基础指标）：
-- `zscore_normalize` - Z-Score 标准化（需要任意数值序列）
-- `rank_normalize` - 排名标准化（需要任意数值序列）
-- `batch_calculator` - 批量计算器（可组合多个指标）
-
-**执行顺序示例**：
-```
-用户查询: "找低波动且跑赢指数的股票"
-↓
-1. get_stock_data (获取股票数据)
-2. rolling_std (计算波动率) ← 依赖步骤1
-3. beta (计算Beta系数) ← 依赖步骤1 + 自动加载指数数据
-4. outperform_rate (计算超额收益频率) ← 依赖步骤1 + 指数数据
-5. 组合筛选: volatility < 阈值 AND outperform_rate > 阈值
-```
-
-> **注意**：Agent 会自动识别工具依赖关系并按正确顺序执行，无需手动指定顺序。
+> Agent 自动处理依赖排序，无需手动指定执行顺序。
 
 ### 扩展数据源
 
@@ -778,6 +748,8 @@ uv sync
 **架构优化**：
 - 🎯 **质量评估重构**：从硬编码评分改为动态加载 `.stock_asking/rules/quality-criteria.md`，Agent 自主决策
 - 📁 **配置结构优化**：Rules/Skills 目录重组，消除重复，职责清晰
+- 🔄 **数据共享机制**：多个策略查询共享同一份过滤后的数据，避免重复加载
+- 🎯 **职责分离**：股票池过滤由独立的 `StockPoolService` 模块处理（位于 `src/agent/services/`），Orchestrator 只负责流程编排
 
 ## 🙏 致谢
 

@@ -48,6 +48,7 @@ def create_screener_agent(
     deep_thinking: bool = False,
     max_iterations: int = 2,
     query: str | None = None,
+    rules_dict: dict[str, str] | None = None,
 ) -> Any:
     """Create the screener agent.
 
@@ -60,6 +61,7 @@ def create_screener_agent(
         deep_thinking: If True, use deepagents with write_todos; if False, use simple ReAct agent
         max_iterations: Maximum iterations for agent execution (controls recursion limit)
         query: User query for intelligent memory/skill loading
+        rules_dict: Rules dictionary from RulesLoader (will be injected into system prompt)
 
     Returns:
         Compiled Agent (CompiledStateGraph)
@@ -69,8 +71,8 @@ def create_screener_agent(
     # Get all tools (MCP + Bridge)
     all_tools = tool_provider.get_tools_for_agent("all")
 
-    # Build system prompt with domain knowledge
-    system_prompt = _build_system_prompt(tool_provider, skill_registry)
+    # Build system prompt with domain knowledge and rules
+    system_prompt = _build_system_prompt(tool_provider, skill_registry, rules_dict)
 
     if deep_thinking:
         # 深度思考模式：使用 deepagents（包含 write_todos）

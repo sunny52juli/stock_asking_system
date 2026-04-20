@@ -256,17 +256,32 @@ if __name__ == "__main__":
 - 适用于必须遵守的硬性规则（如“禁止使用未来数据”）
 - **不适用于**指导性知识（如质量标准、重试策略），这类内容应放在 Skills 中
 
-**加载流程**：
+**加载与注入流程**：
 
 ```
-RulesLoader.load() 
+ComponentInitializer 初始化
   ↓
-读取 .stock_asking/rules/*.md
+RulesLoader.load() 读取 .stock_asking/rules/*.md
   ↓
-格式化为 system prompt 片段
+存储到 self.rules 字典
   ↓
-合并到 Agent 初始提示词
+create_screener_agent(rules_dict=self.rules)
+  ↓
+_build_system_prompt(..., rules_dict)
+  ↓
+RulesLoader.build_rules_section(rules_dict)
+  ↓
+拼接到 system prompt
+  ↓
+Agent 启动时看到所有规则
 ```
+
+**关键实现细节**：
+- `component_initializer.py` 第 77 行：加载 rules
+- `component_initializer.py` 第 209 行：传入 `rules_dict=self.rules`
+- `agent_factory.py` 第 64 行：接收 `rules_dict` 参数
+- `agent_factory.py` 第 75 行：传递给 `_build_system_prompt()`
+- `agent_factory.py` 第 173-176 行：如果 rules_dict 存在，调用 `build_rules_section()` 并拼接
 
 **使用示例**：
 
@@ -327,19 +342,25 @@ else:
 - **技术性评估**：QualityEvaluator 只做基础技术检查（候选数量是否为0、行业多样性计算等）
 - **规则动态加载**：评估标准从 `quality-criteria.md` 加载，返回给 Agent 参考
 - **Agent 自主决策**：Agent 根据返回的 quality_criteria 自行判断和调整策略
+- **参数错误检测**：自动识别工具参数验证失败，触发智能重试
 
 **评估维度**：
 - **候选数量**：基本检查（0个=失败），具体标准由 quality-criteria.md 定义
 - **行业多样性**：计算熵值评估行业分布均匀度
 - **回测指标**：夏普比率、最大回撤、胜率等技术指标
 - **代码规范性**：导入完整性、注释覆盖率、异常处理
+- **参数验证错误**：检测 Pydantic 验证失败，提取智能建议并触发重试
 
 **工作流程**：
 ```
 1. QualityEvaluator 初始化时加载 quality-criteria.md
 2. 执行技术性评估，计算基础分数
-3. 返回评估结果 + quality_criteria 原始内容
-4. Agent 根据 quality_criteria 自主调整策略
+3. **优先检测参数验证错误**（新增）
+   - 检查结果中是否包含 "参数验证失败"
+   - 调用 _handle_param_validation_error() 提取智能建议
+   - 返回 should_retry=True + 详细纠错建议
+4. 返回评估结果 + quality_criteria 原始内容
+5. Agent 根据 quality_criteria 自主调整策略
 ```
 
 **输出示例**：

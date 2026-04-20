@@ -45,27 +45,59 @@ output:
   strategies_dir: "${SCREENER_SCRIPTS_DIR:-./screening_scripts}"  # 策略脚本输出目录
   auto_save_script: true         # 是否自动保存生成的策略脚本（true=自动保存，false=询问用户）
 
-# Agent约束框架
+# Agent约束框架（Harness）- 三大核心组件
 harness:
-  deep_thinking: True         # 是否启用深度思考模式（true=详细分析，false=快速响应）
-  max_iterations: 2            # 最大迭代次数
-  max_consecutive_errors: 2    # 最大连续错误次数
-  max_execution_time: 300      # 最大执行时间 (秒)
+  deep_thinking: True              # 是否启用深度思考模式（true=详细分析，false=快速响应）
+  max_iterations: 2                # 最大迭代次数
+  max_consecutive_errors: 2        # 最大连续错误次数
+  max_execution_time: 300          # 最大执行时间 (秒)
   
-  # Hook配置（自定义验证和质量控制）
+  # ========== 1. Hooks 钩子系统 ==========
+  # 在关键节点执行自定义验证脚本
   hooks:
-    PreToolUse: []
+    # 工具调用前验证（PreToolUse）
+    PreToolUse:
+      - matcher: "run_screening"   # 仅对 run_screening 工具生效
+        hooks:
+          - type: command
+            command: "python .stock_asking/hooks/validate-strategy.py"
+    
+    # 工具调用后检查（PostToolUse）- 当前为空，可按需添加
     PostToolUse: []
+    
+    # Agent 会话结束时的质量门禁（Stop）
     Stop:
       - hooks:
           - type: command
-            command: "python hooks/quality-gate.py"
+            command: "python .stock_asking/hooks/quality-gate.py"
 
-# 权限控制
+# ========== 2. Rules 规则引擎 ==========
+# 规则文件位于 .stock_asking/rules/*.md
+# 会自动加载并注入到 System Prompt 中约束 Agent 行为
+# 当前已启用的规则：
+#   - quality-criteria.md    : 结果质量评估标准
+#   - expression-design.md   : 表达式设计规范
+#   - data-quality.md        : 数据质量要求
+
+# ========== 3. Permissions 权限控制 ==========
 permissions:
+  # 白名单模式：只允许列出的工具（支持通配符）
   allow:
-    - "*"                      # 允许所有工具
-  deny: []                     # 拒绝的工具列表
+    - "*"                      # 默认允许所有工具
+  
+  # 黑名单模式：禁止列出的工具（deny 优先级高于 allow）
+  deny: []                     # 当前无禁止工具
+  
+  # 示例配置（取消注释以启用）：
+  # allow:
+  #   - "run_screening"
+  #   - "get_stock_data"
+  #   - "rolling_*"           # 允许所有 rolling 开头的工具
+  #   - "rsi"
+  #   - "macd"
+  # deny:
+  #   - "delete_*"            # 禁止所有删除操作
+  #   - "execute_code"        # 禁止代码执行
 
 # MCP服务配置
 mcp: {}

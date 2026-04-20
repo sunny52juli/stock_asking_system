@@ -117,8 +117,49 @@ class ScreeningQualityEvaluator:
             logger.error(f"加载 quality-criteria.md 失败: {e}")
             return ""
     
+    def _handle_param_validation_error(self, error_message: str, result: dict) -> dict[str, Any]:
+        """处理参数验证错误，触发自动重试.
+        
+        Args:
+            error_message: 错误消息
+            result: 原始结果
+            
+        Returns:
+            包含 should_retry=True 的评估结果
+        """
+        issues = ["工具参数验证失败"]
+        suggestions = []
+        
+        # 提取具体的错误信息和建议
+        if "❌" in error_message:
+            # 解析智能建议
+            lines = error_message.split("\n")
+            for line in lines:
+                if "❌" in line or "✅" in line or "💡" in line:
+                    suggestions.append(line.strip())
+        else:
+            # 通用建议
+            suggestions.append(
+                "检测到参数验证错误，请检查：\n"
+                "  1. 工具参数名称是否正确（参考工具文档）\n"
+                "  2. 参数类型是否符合要求\n"
+                "  3. 必需参数是否都已提供\n"
+                f"\n原始错误：{error_message[:200]}"
+            )
+        
+        logger.warning(f"⚠️ 检测到参数验证错误，触发自动优化")
+        
+        return {
+            "quality_score": 0.0,
+            "issues": issues,
+            "suggestions": suggestions,
+            "should_retry": True,  # 强制重试
+            "error_type": "param_validation_error",
+            "original_error": error_message,
+        }
+    
     def evaluate(self, query: str, result: dict[str, Any]) -> dict[str, Any]:
-        """评估筛选结果质量 - 增强版（支持量化评分）.
+        """评估筛选结果质量 - 增强版（支持量化评分 + 参数错误检测）.
         
         Args:
             query: 用户查询
@@ -130,6 +171,11 @@ class ScreeningQualityEvaluator:
         all_issues = []
         all_suggestions = []
         scores = []
+        
+        # 0. 检测参数验证错误（新增）
+        error_message = result.get("message", "") or result.get("error", "")
+        if "参数验证失败" in str(error_message):
+            return self._handle_param_validation_error(error_message, result)
         
         # 提取候选股票（从多个可能的位置）
         candidates = result.get("candidates", [])

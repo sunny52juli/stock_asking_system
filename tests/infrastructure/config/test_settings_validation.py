@@ -71,7 +71,10 @@ class TestDataConfig:
     def test_default_values(self):
         """默认值设置."""
         config = DataConfig()
-        assert config.cache_root.resolve() == Path("./data_cache").resolve()
+        # cache_root 是相对路径 ./data_cache，需要相对于当前工作目录解析
+        # 测试时工作目录是项目根目录，所以应该解析到项目根目录下的 data_cache
+        expected_cache_root = Path("./data_cache").resolve()
+        assert config.cache_root.resolve() == expected_cache_root
         # source_token 从 .env 加载，可能非空
         assert isinstance(config.source_token, str)
 

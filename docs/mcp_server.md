@@ -13,6 +13,7 @@ MCP (Model Context Protocol) Server 基于 FastMCP 框架构建,为 Agent 提供
 - 🌐 **多传输协议**:支持stdio和SSE两种传输方式
 - 📦 **工具分类**:数据查询、指标计算、策略执行等
 - ⚡ **高性能**:向量化计算,快速响应
+- 🛡️ **智能参数验证**:Pydantic 自动验证 + 智能纠错建议
 
 ## 🏗️ 架构设计
 
@@ -85,7 +86,35 @@ server.run(transport="stdio")
 
 ### 2. Auto Register(自动注册)
 
-通过装饰器自动注册工具函数。
+通过装饰器自动注册工具函数，并提供智能参数验证。
+
+**核心功能**：
+1. **自动注册**：使用 `@tool_registry.register()` 装饰器
+2. **Pydantic 验证**：从函数签名自动生成验证模型
+3. **智能纠错建议**：识别常见参数错误并提供修正建议
+
+**智能参数建议示例**：
+
+当 Agent 调用工具时使用错误的参数名：
+```python
+# 错误调用
+rank_normalize(values='beta_60')  # ❌ 错误参数名
+
+# 系统返回的智能建议
+❌ 缺少必需参数：'column'
+⚠️  检测到你可能使用了 'values'
+✅ 请改为使用：'column'
+💡 示例：{'column': 'beta_60'}
+```
+
+**支持的参数映射**：
+- `rank_normalize`: values → column
+- `rolling_mean/rolling_std/rsi/kdj`: n/period → window
+- `macd`: fast_period → fast, slow_period → slow, signal_period → signal
+
+**实现位置**：
+- `auto_register.py` 第 154-235 行：`_get_param_suggestion()` 方法
+- `quality_evaluator.py` 第 120-160 行：`_handle_param_validation_error()` 方法
 
 **使用示例**:
 

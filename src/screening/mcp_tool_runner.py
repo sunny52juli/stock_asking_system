@@ -230,8 +230,14 @@ class ToolExecutor:
         
         可恢复的错误通常是数据层面的问题（如除零、空值），
         而不可恢复的错误是代码或配置问题（如参数错误、类型错误）。
+        
+        注意：Pydantic 验证错误属于参数错误，应抛出给 Agent 修正。
         """
         error_msg = str(error).lower()
+        
+        # Pydantic 验证错误 - 不可恢复，需要 Agent 修正参数
+        if 'validation error' in error_msg or 'pydantic' in error_msg:
+            return False
         
         # 可恢复的错误类型（数据层面）
         recoverable_patterns = [

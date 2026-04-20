@@ -11,7 +11,7 @@ import fnmatch
 import logging
 from typing import Any
 
-from src.agent.config import PermissionConfig
+from src.agent.config import PermissionsConfig
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class PermissionChecker:
         self.deny_patterns = deny_patterns
 
     @classmethod
-    def from_config(cls, config: PermissionConfig) -> "PermissionChecker":
+    def from_config(cls, config: PermissionsConfig) -> "PermissionChecker":
         """从配置对象创建权限检查器.
         
         Args:

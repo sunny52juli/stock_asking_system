@@ -206,6 +206,7 @@ class ComponentInitializer:
             deep_thinking=self.settings.harness.deep_thinking,
             max_iterations=self.settings.harness.max_iterations,
             query=query,
+            rules_dict=self.rules,  # 注入 Rules 到 System Prompt
         )
         logger.info("✅ Agent 创建完成")
         
