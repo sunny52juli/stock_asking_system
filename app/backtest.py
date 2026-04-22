@@ -91,7 +91,7 @@ def main(
         logger.info(f"✅ 股票池过滤完成：{len(filtered_codes)} 只股票")
         
         # 检查并记录指数数据
-        if index_data is not None and hasattr(index_data, 'is_empty') and not index_data.is_empty():
+        if index_data is not None and not index_data.is_empty():
             logger.info(f"✅ 从 StockPoolService 获取指数数据: {len(index_data)} 条记录")
             logger.debug(f"   指数数据列: {list(index_data.columns)}")
         else:
@@ -102,10 +102,10 @@ def main(
         engine.data = filtered_data
         engine.index_data = index_data
         
-        if index_data is not None and hasattr(index_data, 'columns'):
+        if index_data is not None:
             logger.info(f"✅ engine.index_data 已设置: {len(index_data)} 条记录, 列: {list(index_data.columns)}")
         else:
-            logger.warning("⚠️ engine.index_data 为 None 或无效")
+            logger.warning("⚠️ engine.index_data 为 None")
         
         # 执行策略
         results = engine.run_directory(actual_scripts_dir)

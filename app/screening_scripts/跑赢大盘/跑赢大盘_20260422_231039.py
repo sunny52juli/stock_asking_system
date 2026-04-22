@@ -1,22 +1,25 @@
 ﻿#!/usr/bin/env python3
 """
-筛选逻辑脚本: 低波动且跑赢大盘
+筛选逻辑脚本: 低波动跑赢大盘_v3
 (由 core.agent 生成, 仅依赖 core)
 
 原始查询: "找出低波动且跑赢大盘的股票"：
 
 
 筛选说明:
-    筛选低波动（Beta<1）且跑赢大盘（Alpha>0）的股票
+    筛选跑赢大盘（20日跑赢比例超过40%）且当前波动率低于历史平均波动率的股票，同时要求价格在20日均线之上。使用相对波动率而非绝对排名，更适应市场环境
 
 工具步骤:
-    1. beta_60: 通过工具 'beta' 计算，参数={'window': 60}
-    2. alpha_60: 通过工具 'alpha' 计算，参数={'window': 60}
+    1. outperform_20d: 通过工具 'outperform_rate' 计算，参数={'window': 20}
+    2. volatility_20d: 通过工具 'volatility' 计算，参数={'column': 'close', 'window': 20}
+    3. volatility_rank: 通过工具 'rank_normalize' 计算，参数={'column': 'volatility_20d'}
+    4. ma20: 通过工具 'rolling_mean' 计算，参数={'column': 'close', 'window': 20}
+    5. volatility_ma60: 通过工具 'rolling_mean' 计算，参数={'column': 'volatility_20d', 'window': 60}
 
-筛选表达式: (beta_60 < 1.0) & (alpha_60 > 0)
-置信度公式: alpha_60 * 0.7 + (1.0 - beta_60) * 0.3
+筛选表达式: (outperform_20d > 0.4) & (volatility_20d < volatility_ma60) & (close > ma20)
+置信度公式: rank_normalize(outperform_20d) * 0.5 + rank_normalize(1 - volatility_rank) * 0.5
 
-生成时间: 2026-04-20 00:11:23
+生成时间: 2026-04-22 23:10:39
 """
 
 import sys
@@ -43,26 +46,50 @@ from utils.screening.stock_screener import StockScreener
 
 # ==================== 筛选逻辑定义 ====================
 SCREENING_LOGIC = {
-    "name": "低波动且跑赢大盘",
+    "name": "低波动跑赢大盘_v3",
     "tools": [
         {
-            "tool": "beta",
+            "tool": "outperform_rate",
             "params": {
-                "window": 60
+                "window": 20
             },
-            "var": "beta_60"
+            "var": "outperform_20d"
         },
         {
-            "tool": "alpha",
+            "tool": "volatility",
             "params": {
+                "column": "close",
+                "window": 20
+            },
+            "var": "volatility_20d"
+        },
+        {
+            "tool": "rank_normalize",
+            "params": {
+                "column": "volatility_20d"
+            },
+            "var": "volatility_rank"
+        },
+        {
+            "tool": "rolling_mean",
+            "params": {
+                "column": "close",
+                "window": 20
+            },
+            "var": "ma20"
+        },
+        {
+            "tool": "rolling_mean",
+            "params": {
+                "column": "volatility_20d",
                 "window": 60
             },
-            "var": "alpha_60"
+            "var": "volatility_ma60"
         }
     ],
-    "expression": "(beta_60 < 1.0) & (alpha_60 > 0)",
-    "confidence_formula": "alpha_60 * 0.7 + (1.0 - beta_60) * 0.3",
-    "rationale": "筛选低波动（Beta<1）且跑赢大盘（Alpha>0）的股票"
+    "expression": "(outperform_20d > 0.4) & (volatility_20d < volatility_ma60) & (close > ma20)",
+    "confidence_formula": "rank_normalize(outperform_20d) * 0.5 + rank_normalize(1 - volatility_rank) * 0.5",
+    "rationale": "筛选跑赢大盘（20日跑赢比例超过40%）且当前波动率低于历史平均波动率的股票，同时要求价格在20日均线之上。使用相对波动率而非绝对排名，更适应市场环境"
 }
 # ==================== 筛选逻辑定义结束 ====================
 
@@ -95,7 +122,7 @@ def main():
 
     logic_name = SCREENING_LOGIC.get("name", "未命名筛选")
     
-    parser = argparse.ArgumentParser(description=f'低波动且跑赢大盘 - 筛选脚本')
+    parser = argparse.ArgumentParser(description=f'低波动跑赢大盘_v3 - 筛选脚本')
     parser.add_argument('--top_n', type=int, default=20, help='返回股票数量（默认 20）')
     parser.add_argument('--output', type=str, default=None, help='输出文件路径（可选）')
     args = parser.parse_args()

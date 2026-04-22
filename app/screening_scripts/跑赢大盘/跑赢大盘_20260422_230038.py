@@ -1,22 +1,22 @@
 ﻿#!/usr/bin/env python3
 """
-筛选逻辑脚本: 低波动跑赢大盘_简化版
+筛选逻辑脚本: 低波动跑赢大盘策略_v3
 (由 core.agent 生成, 仅依赖 core)
 
 原始查询: "找出低波动且跑赢大盘的股票"：
 
 
 筛选说明:
-    筛选Beta系数小于1.0（波动低于市场）且Alpha大于0.0005（有显著超额收益）的股票。简化条件以提高筛选成功率。
+    筛选信息比率>0（有超额收益）且跟踪误差<15%（低主动风险）的股票，实现风险调整后的优异表现
 
 工具步骤:
-    1. beta_60: 通过工具 'beta' 计算，参数={'window': 60}
-    2. alpha_60: 通过工具 'alpha' 计算，参数={'window': 60}
+    1. ir_60: 通过工具 'information_ratio' 计算，参数={'window': 60}
+    2. te_60: 通过工具 'tracking_error' 计算，参数={'window': 60}
 
-筛选表达式: (beta_60 < 1.0) & (alpha_60 > 0.0005)
-置信度公式: ((1.0 - beta_60) * 0.6 + alpha_60 * 100 * 0.4)
+筛选表达式: (ir_60 > 0) & (te_60 < 0.15)
+置信度公式: ir_60 * 0.7 + (1.0 / (te_60 + 0.01)) * 0.3
 
-生成时间: 2026-04-20 16:55:38
+生成时间: 2026-04-22 23:00:38
 """
 
 import sys
@@ -43,26 +43,26 @@ from utils.screening.stock_screener import StockScreener
 
 # ==================== 筛选逻辑定义 ====================
 SCREENING_LOGIC = {
-    "name": "低波动跑赢大盘_简化版",
+    "name": "低波动跑赢大盘策略_v3",
     "tools": [
         {
-            "tool": "beta",
+            "tool": "information_ratio",
             "params": {
                 "window": 60
             },
-            "var": "beta_60"
+            "var": "ir_60"
         },
         {
-            "tool": "alpha",
+            "tool": "tracking_error",
             "params": {
                 "window": 60
             },
-            "var": "alpha_60"
+            "var": "te_60"
         }
     ],
-    "expression": "(beta_60 < 1.0) & (alpha_60 > 0.0005)",
-    "confidence_formula": "((1.0 - beta_60) * 0.6 + alpha_60 * 100 * 0.4)",
-    "rationale": "筛选Beta系数小于1.0（波动低于市场）且Alpha大于0.0005（有显著超额收益）的股票。简化条件以提高筛选成功率。"
+    "expression": "(ir_60 > 0) & (te_60 < 0.15)",
+    "confidence_formula": "ir_60 * 0.7 + (1.0 / (te_60 + 0.01)) * 0.3",
+    "rationale": "筛选信息比率>0（有超额收益）且跟踪误差<15%（低主动风险）的股票，实现风险调整后的优异表现"
 }
 # ==================== 筛选逻辑定义结束 ====================
 
@@ -95,7 +95,7 @@ def main():
 
     logic_name = SCREENING_LOGIC.get("name", "未命名筛选")
     
-    parser = argparse.ArgumentParser(description=f'低波动跑赢大盘_简化版 - 筛选脚本')
+    parser = argparse.ArgumentParser(description=f'低波动跑赢大盘策略_v3 - 筛选脚本')
     parser.add_argument('--top_n', type=int, default=20, help='返回股票数量（默认 20）')
     parser.add_argument('--output', type=str, default=None, help='输出文件路径（可选）')
     args = parser.parse_args()

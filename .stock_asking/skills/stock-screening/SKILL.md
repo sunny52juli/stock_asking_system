@@ -160,10 +160,18 @@ author: Quant Team
 **工具**: `outperform_rate(window=60)`
 
 ## 关键规则
+
+**⚠️ 重要提示**：详细的规范和标准请参考以下文档：
+- **表达式设计规范**：`.stock_asking/rules/expression-design.md`
+- **工具返回值范围**：`.stock_asking/rules/tool-value-ranges.md`
+- **质量标准**：`.stock_asking/rules/quality-criteria.md`
+- **数据质量规则**：`.stock_asking/rules/data-quality.md`
+
+**核心要点**：
 1. **参数命名**: 所有工具第一个参数必须是 `values` 或 `column`
 2. **变量一致性**: expression 中的变量名必须与 tools 定义的 `var` 完全一致
 3. **百分比**: 用小数表示 (3% = 0.03)
-4. **质量标准**: 候选数量 1-50 个为最佳
+4. **质量标准**: 候选数量 10-30 个为最佳
 5. **注意**: 行业、ST、停牌、市值等过滤已由 StockPoolService 统一处理，无需在策略中重复
 
 ## 常见错误
@@ -175,9 +183,12 @@ author: Quant Team
   - `(volatility_20 / close < 0.10)` → **禁止随意除法**，变异系数需要明确的金融含义
   - **正确做法**: 使用 `zscore_normalize`、`rank_normalize` 或专业指标如 `beta`
 - ❌ 在 screening_logic 中重复行业/ST/市值过滤（已由 StockPoolService 处理）
+- ❌ **工具返回值范围错误**: 详见 `.stock_asking/rules/tool-value-ranges.md`
 
 ## 相关资源
 
 - **策略模式参考**：`.stock_asking/skills/strategy-patterns/SKILL.md`
-- **质量评估标准**：`.stock_asking/skills/quality-criteria/SKILL.md`
+- **质量评估标准**：`.stock_asking/rules/quality-criteria.md`
 - **数据质量规则**：`.stock_asking/rules/data-quality.md`
+- **表达式设计规范**：`.stock_asking/rules/expression-design.md`
+- **工具返回值范围**：`.stock_asking/rules/tool-value-ranges.md`

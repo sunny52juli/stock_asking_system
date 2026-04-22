@@ -36,7 +36,7 @@ def beta(
     Returns:
         DataFrame with columns: ts_code, beta
     """
-    if index_data is None or (hasattr(index_data, 'is_empty') and index_data.is_empty()):
+    if index_data is None or index_data.is_empty():
         raise ValueError("指数数据为空，无法计算 Beta")
     
     # 统一预处理指数收益率
@@ -90,7 +90,7 @@ def alpha(
     Returns:
         DataFrame with columns: ts_code, alpha
     """
-    if index_data is None or (hasattr(index_data, 'is_empty') and index_data.is_empty()):
+    if index_data is None or index_data.is_empty():
         raise ValueError("指数数据为空，无法计算 Alpha")
     
     # 统一预处理
@@ -145,7 +145,7 @@ def outperform_rate(
     Returns:
         DataFrame with columns: ts_code, outperform_ratio (0-1之间)
     """
-    if index_data is None or (hasattr(index_data, 'is_empty') and index_data.is_empty()):
+    if index_data is None or index_data.is_empty():
         raise ValueError("指数数据为空，无法计算跑赢比例")
     
     # 统一预处理
@@ -192,7 +192,7 @@ def correlation_with_index(
     Returns:
         DataFrame with columns: ts_code, correlation
     """
-    if index_data is None or (hasattr(index_data, 'is_empty') and index_data.is_empty()):
+    if index_data is None or index_data.is_empty():
         raise ValueError("指数数据为空，无法计算相关系数")
     
     # 统一预处理
@@ -236,7 +236,7 @@ def tracking_error(
     Returns:
         DataFrame with columns: ts_code, tracking_error
     """
-    if index_data is None or (hasattr(index_data, 'is_empty') and index_data.is_empty()):
+    if index_data is None or index_data.is_empty():
         raise ValueError("指数数据为空，无法计算跟踪误差")
     
     # 统一预处理
@@ -291,7 +291,7 @@ def information_ratio(
     Returns:
         DataFrame with columns: ts_code, information_ratio
     """
-    if index_data is None or (hasattr(index_data, 'is_empty') and index_data.is_empty()):
+    if index_data is None or index_data.is_empty():
         raise ValueError("指数数据为空，无法计算信息比率")
     
     # 统一预处理

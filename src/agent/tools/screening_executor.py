@@ -5,10 +5,8 @@ from __future__ import annotations
 import json
 import logging
 
-from infrastructure.errors.exceptions import DataLoadError
 from utils.screening.stock_screener import StockScreener
 from .logic_validator import validate_screening_logic
-from .tool_executor import execute_tool_impl
 
 from src.agent.services.index_loader import load_and_merge_index_data
 logger = logging.getLogger(__name__)
@@ -22,14 +20,12 @@ _last_screening_result: dict | None = None
 
 def create_run_screening(
     data_fn,
-    scripts_dir: str,
     stock_codes: list[str] | None = None,
 ):
     """创建 run_screening 桥接工具.
 
     Args:
         data_fn: 返回当前数据 DataFrame 的函数
-        scripts_dir: 脚本输出目录
         stock_codes: 预筛选后的股票代码列表（可选）
 
     Returns:
@@ -75,16 +71,12 @@ def create_run_screening(
         index_data = None
         if isinstance(data, tuple) and len(data) == 2:
             data, index_data = data
-            # Polars: is_empty() 代替 .empty
-            index_is_empty = (hasattr(index_data, 'is_empty') and index_data.is_empty()) or (hasattr(index_data, 'empty') and index_data.empty)
-            if index_data is not None and not index_is_empty:
+            if index_data is not None and not index_data.is_empty():
                 logger.info(f"📊 接收到独立的指数数据: {len(index_data)} 条记录")
             else:
                 index_data = None
         
-        # Polars: is_empty() 代替 .empty
-        data_is_empty = (hasattr(data, 'is_empty') and data.is_empty()) or (hasattr(data, 'empty') and data.empty)
-        if data is None or data_is_empty:
+        if data is None or data.is_empty():
             raise ValueError("No data available")
         
         # 检查是否需要指数数据（如果 tools_definition 或 tools 中包含指数相关工具）
@@ -138,6 +130,11 @@ def create_run_screening(
         
         # 保存到最后一次筛选结果（供外部可靠获取）
         _last_screening_result = result
+        
+        # 如果筛选成功且有候选股票，重置计数器避免后续误判
+        if candidates:
+            logger.info(f"✅ 筛选成功，找到 {len(candidates)} 只候选股票，重置调用计数器")
+            _run_screening_call_count = 0
 
         return json.dumps(result, ensure_ascii=False, default=str)
 

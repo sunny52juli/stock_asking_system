@@ -137,14 +137,8 @@ class StockPoolService:
         pool_filter = StockPoolFilter(self.settings.stock_pool)
         df_filtered = pool_filter._filter_price_data(df_price, stock_codes)
         
-        # Polars: is_empty() 代替 .empty
-        df_is_empty = (hasattr(df_filtered, 'is_empty') and df_filtered.is_empty()) or (hasattr(df_filtered, 'empty') and df_filtered.empty)
-        if not df_is_empty and "ts_code" in df_filtered.columns:
-            ts_code_col = df_filtered["ts_code"]
-            if hasattr(ts_code_col, 'drop_nulls'):
-                stock_codes = ts_code_col.drop_nulls().unique().to_list()
-            else:
-                stock_codes = ts_code_col.dropna().unique().tolist()
+        if not df_filtered.is_empty() and "ts_code" in df_filtered.columns:
+            stock_codes = df_filtered["ts_code"].drop_nulls().unique().to_list()
             logger.info(f"📊 价格/流动性过滤后：{len(stock_codes)} 只股票")
         
         # 4. 市值过滤
@@ -155,11 +149,8 @@ class StockPoolService:
         stock_codes = pool_filter.filter_by_completeness(df_filtered, stock_codes)
         logger.info(f"📊 完整性过滤后：{len(stock_codes)} 只股票")
         
-        # 过滤到最终股票池（保持 polars 格式）
-        if hasattr(df_filtered, 'filter') and not hasattr(df_filtered, 'loc'):
-            filtered_data = df_filtered.filter(pl.col("ts_code").is_in(stock_codes))
-        else:
-            filtered_data = df_filtered[df_filtered["ts_code"].isin(stock_codes)].copy()
+        # 过滤到最终股票池
+        filtered_data = df_filtered.filter(pl.col("ts_code").is_in(stock_codes))
         
         # 确保 index_data 不为 None
         if index_data is None:
@@ -188,49 +179,21 @@ class StockPoolService:
         Returns:
             过滤后的股票代码列表
         """
-        # Polars: is_empty() 代替 .empty
-        if basic_df is None or (hasattr(basic_df, 'is_empty') and basic_df.is_empty()) or (hasattr(basic_df, 'empty') and basic_df.empty):
+        if basic_df is None or basic_df.is_empty():
             return []
         
-        # Polars: drop_nulls() 代替 dropna()
-        ts_code_col = basic_df["ts_code"]
-        if hasattr(ts_code_col, 'drop_nulls'):
-            stock_codes = ts_code_col.drop_nulls().unique().to_list()
-        else:
-            stock_codes = ts_code_col.dropna().unique().tolist()
+        stock_codes = basic_df["ts_code"].drop_nulls().unique().to_list()
         
         # 排除 ST 股票
         if self.settings.stock_pool.exclude_st:
-            # Polars: str.contains() 不支持 na 参数，用 fill_null(False) 代替
-            name_col = basic_df["name"]
-            if hasattr(name_col, 'str'):
-                st_mask = name_col.str.contains(r"ST|\*ST").fill_null(False)
-            else:
-                st_mask = name_col.str.contains(r"ST|\*ST", na=False)
-            filtered_df = basic_df.filter(~st_mask) if hasattr(basic_df, 'filter') else basic_df[~st_mask]
-            ts_code_col = filtered_df["ts_code"]
-            if hasattr(ts_code_col, 'drop_nulls'):
-                stock_codes = ts_code_col.drop_nulls().unique().to_list()
-            else:
-                stock_codes = ts_code_col.dropna().unique().tolist()
+            st_mask = basic_df["name"].str.contains(r"ST|\*ST").fill_null(False)
+            filtered_df = basic_df.filter(~st_mask)
+            stock_codes = filtered_df["ts_code"].drop_nulls().unique().to_list()
         
         # 排除停牌股票（vol=0）
-        # Polars: is_empty() 代替 .empty
-        data_is_empty = (hasattr(data, 'is_empty') and data.is_empty()) or (hasattr(data, 'empty') and data.empty)
-        if not data_is_empty and "vol" in data.columns:
-            # Polars: 用 filter() 代替索引访问
-            if hasattr(data, 'filter') and not hasattr(data, 'loc'):
-                latest_date_data = data.filter(pl.col("trade_date") == latest_trade_date)
-            else:
-                # Pandas MultiIndex
-                if hasattr(data, 'index') and isinstance(data.index, pd.MultiIndex):
-                    latest_date_data = data[data.index.get_level_values('trade_date') == pd.to_datetime(latest_trade_date)]
-                else:
-                    latest_date_data = data[data["trade_date"] == pd.to_datetime(latest_trade_date)]
-            # Polars: is_empty() 代替 .empty
-            latest_is_empty = (hasattr(latest_date_data, 'is_empty') and latest_date_data.is_empty()) or (hasattr(latest_date_data, 'empty') and latest_date_data.empty)
-            if not latest_is_empty:
-                # Polars: 直接用列过滤
+        if not data.is_empty() and "vol" in data.columns:
+            latest_date_data = data.filter(pl.col("trade_date") == latest_trade_date)
+            if not latest_date_data.is_empty():
                 active_stocks = latest_date_data.filter(pl.col("vol") > 0).select("ts_code").unique().to_series().to_list()
                 stock_codes = [code for code in stock_codes if code in active_stocks]
         

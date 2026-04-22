@@ -17,7 +17,7 @@ from infrastructure.config.settings import get_settings
 from infrastructure.errors.exceptions import AgentExecutionError
 from src.agent.tools import bridge
 from src.agent.tools.bridge import create_bridge_tools
-import json
+
 logger = get_logger(__name__)
 
 

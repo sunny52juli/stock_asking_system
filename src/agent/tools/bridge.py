@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from .screening_executor import create_run_screening, get_last_screening_result
+from .screening_executor import create_run_screening
 from .script_saver import create_save_screening_script
 
 
@@ -38,7 +38,7 @@ def create_bridge_tools(
         桥接工具函数字典
     """
     tools = {
-        "run_screening": create_run_screening(data_fn, scripts_dir or "", stock_codes),
+        "run_screening": create_run_screening(data_fn, stock_codes),
     }
     
     # 只在提供了 scripts_dir 时保存脚本工具

@@ -53,16 +53,9 @@ class StockScreener:
         
         # 如果已提供有效的指数数据，直接使用
         if index_data is not None:
-            # 兼容 polars 和 pandas
-            is_empty = (
-                (hasattr(index_data, 'is_empty') and index_data.is_empty()) or
-                (hasattr(index_data, 'empty') and index_data.empty) or
-                len(index_data) == 0
-            )
-            if not is_empty:
+            if not index_data.is_empty():
                 logger.info(f"✅ StockScreener 使用传入的指数数据: {len(index_data)} 条记录")
-                if hasattr(index_data, 'columns'):
-                    logger.debug(f"   指数数据列: {list(index_data.columns)}")
+                logger.debug(f"   指数数据列: {list(index_data.columns)}")
             else:
                 logger.warning("⚠️ 传入的指数数据为空")
                 index_data = None
@@ -73,20 +66,11 @@ class StockScreener:
                 loader = IndexDataLoader()
                 loaded_index_data = loader.load_and_merge(data, stock_codes)
                 
-                # 兼容 polars 和 pandas
-                if loaded_index_data is not None:
-                    is_empty = (
-                        (hasattr(loaded_index_data, 'is_empty') and loaded_index_data.is_empty()) or
-                        (hasattr(loaded_index_data, 'empty') and loaded_index_data.empty) or
-                        len(loaded_index_data) == 0
-                    )
-                    if not is_empty:
-                        self.index_data = loaded_index_data
-                        logger.info(f"✅ 成功加载指数数据: {len(self.index_data)} 条记录")
-                    else:
-                        logger.warning("⚠️ 自动加载指数数据返回空结果")
+                if loaded_index_data is not None and not loaded_index_data.is_empty():
+                    self.index_data = loaded_index_data
+                    logger.info(f"✅ 成功加载指数数据: {len(self.index_data)} 条记录")
                 else:
-                    logger.warning("⚠️ 自动加载指数数据返回 None")
+                    logger.warning("⚠️ 自动加载指数数据返回空结果或None")
             except Exception as e:
                 logger.warning(f"⚠️ 自动加载指数数据失败: {e}")
         

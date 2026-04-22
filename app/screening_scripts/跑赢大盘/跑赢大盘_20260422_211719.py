@@ -1,24 +1,23 @@
 ﻿#!/usr/bin/env python3
 """
-筛选逻辑脚本: 低波动跑赢大盘策略_v5
+筛选逻辑脚本: 低波动跑赢大盘简化策略
 (由 core.agent 生成, 仅依赖 core)
 
 原始查询: "找出低波动且跑赢大盘的股票"：
 
 
 筛选说明:
-    筛选Beta排名前30%（低波动）且Alpha排名后30%（跑赢大盘）的股票
+    筛选Beta<1.5（相对低波动）、Alpha接近0或为正（不显著跑输大盘）、有基本成交量的股票
 
 工具步骤:
     1. beta_60: 通过工具 'beta' 计算，参数={'window': 60}
     2. alpha_60: 通过工具 'alpha' 计算，参数={'window': 60}
-    3. beta_rank: 通过工具 'rank_normalize' 计算，参数={'values': 'beta_60'}
-    4. alpha_rank: 通过工具 'rank_normalize' 计算，参数={'values': 'alpha_60'}
+    3. vol_ma20: 通过工具 'rolling_mean' 计算，参数={'column': 'vol', 'window': 20}
 
-筛选表达式: (beta_rank < 0.3) & (alpha_rank > 0.7)
-置信度公式: alpha_rank * 0.7 + (1.0 - beta_rank) * 0.3
+筛选表达式: (beta_60 < 1.5) & (alpha_60 > -0.01) & (vol > vol_ma20 * 0.1)
+置信度公式: rank_normalize(1 - beta_60) * 0.5 + rank_normalize(alpha_60 + 0.02) * 0.5
 
-生成时间: 2026-04-20 01:31:21
+生成时间: 2026-04-22 21:17:19
 """
 
 import sys
@@ -45,7 +44,7 @@ from utils.screening.stock_screener import StockScreener
 
 # ==================== 筛选逻辑定义 ====================
 SCREENING_LOGIC = {
-    "name": "低波动跑赢大盘策略_v5",
+    "name": "低波动跑赢大盘简化策略",
     "tools": [
         {
             "tool": "beta",
@@ -62,23 +61,17 @@ SCREENING_LOGIC = {
             "var": "alpha_60"
         },
         {
-            "tool": "rank_normalize",
+            "tool": "rolling_mean",
             "params": {
-                "values": "beta_60"
+                "column": "vol",
+                "window": 20
             },
-            "var": "beta_rank"
-        },
-        {
-            "tool": "rank_normalize",
-            "params": {
-                "values": "alpha_60"
-            },
-            "var": "alpha_rank"
+            "var": "vol_ma20"
         }
     ],
-    "expression": "(beta_rank < 0.3) & (alpha_rank > 0.7)",
-    "confidence_formula": "alpha_rank * 0.7 + (1.0 - beta_rank) * 0.3",
-    "rationale": "筛选Beta排名前30%（低波动）且Alpha排名后30%（跑赢大盘）的股票"
+    "expression": "(beta_60 < 1.5) & (alpha_60 > -0.01) & (vol > vol_ma20 * 0.1)",
+    "confidence_formula": "rank_normalize(1 - beta_60) * 0.5 + rank_normalize(alpha_60 + 0.02) * 0.5",
+    "rationale": "筛选Beta<1.5（相对低波动）、Alpha接近0或为正（不显著跑输大盘）、有基本成交量的股票"
 }
 # ==================== 筛选逻辑定义结束 ====================
 
@@ -111,7 +104,7 @@ def main():
 
     logic_name = SCREENING_LOGIC.get("name", "未命名筛选")
     
-    parser = argparse.ArgumentParser(description=f'低波动跑赢大盘策略_v5 - 筛选脚本')
+    parser = argparse.ArgumentParser(description=f'低波动跑赢大盘简化策略 - 筛选脚本')
     parser.add_argument('--top_n', type=int, default=20, help='返回股票数量（默认 20）')
     parser.add_argument('--output', type=str, default=None, help='输出文件路径（可选）')
     args = parser.parse_args()

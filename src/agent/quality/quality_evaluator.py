@@ -3,8 +3,8 @@
 定义通用的 QualityEvaluator 协议，并提供选股领域的 ScreeningQualityEvaluator 实现。
 支持 Protocol 设计，便于领域扩展。
 
-质量评估标准从 .stock_asking/skills/quality-criteria/SKILL.md 动态加载，
-避免硬编码评分规则，便于灵活调整。
+质量评估标准通过 RulesLoader 统一加载并注入 System Prompt，
+无需在此处重复加载。支持用户自定义调整评估规则。
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ class EvaluationThresholds:
 class ScreeningQualityEvaluator:
     """选股领域的质量评估器 - 实现 QualityEvaluator 协议.
     
-    从 quality-criteria.md 加载评估规则，支持用户动态调整。
+    Rules 由 RulesLoader 统一加载并注入 System Prompt，无需重复加载。
     增强版：多维度评估（候选数量/行业多样性/代码规范性）
     """
     
@@ -95,28 +95,10 @@ class ScreeningQualityEvaluator:
         else:
             self.rules_dir = rules_dir
         
-        self.quality_criteria = self._load_quality_criteria()
+        # Rules 由 RulesLoader 统一加载并注入 System Prompt，无需在此重复加载
         self.thresholds = thresholds or EvaluationThresholds()
     
-    def _load_quality_criteria(self) -> str:
-        """加载 quality-criteria.md 内容.
-        
-        Returns:
-            quality-criteria.md 的文本内容
-        """
-        criteria_file = self.rules_dir / "quality-criteria.md"
-        if not criteria_file.exists():
-            logger.warning(f"quality-criteria.md 不存在: {criteria_file}")
-            return ""
-        
-        try:
-            content = criteria_file.read_text(encoding="utf-8")
-            logger.info(f"已加载 quality-criteria.md ({len(content)} 字符)")
-            return content
-        except Exception as e:
-            logger.error(f"加载 quality-criteria.md 失败: {e}")
-            return ""
-    
+
     def _handle_param_validation_error(self, error_message: str, result: dict) -> dict[str, Any]:
         """处理参数验证错误，触发自动重试.
         
@@ -280,7 +262,6 @@ class ScreeningQualityEvaluator:
             "issues": all_issues,
             "suggestions": all_suggestions,
             "should_retry": should_retry,
-            "quality_criteria": self.quality_criteria,  # 返回评估规则供 Agent 参考
             "candidate_count": candidate_count,
             "metrics": {
                 "industry_diversity_score": industry_diversity_score,
@@ -327,7 +308,7 @@ class ScreeningQualityEvaluator:
     def _evaluate_candidate_count(self, count: int) -> tuple[float, list[str], list[str]]:
         """评估候选股票数量.
         
-        注意：具体的数量标准由 quality-criteria.md 定义，Agent 自行判断。
+        注意：具体的数量标准由 quality-assessment SKILL 定义，Agent 自行判断。
         此方法只做基本的技术检查。
         """
         issues = []
@@ -341,11 +322,11 @@ class ScreeningQualityEvaluator:
                 "  1. 筛选条件过于严格\n"
                 "  2. 多个条件同时满足的股票极少\n"
                 "  3. 当前市场环境下无符合该策略的股票\n"
-                "建议：参考 quality_criteria 中的标准，放宽阈值或减少约束条件数量"
+                "建议：参考 quality-assessment SKILL 中的标准，放宽阈值或减少约束条件数量"
             )
             return 0.0, issues, suggestions
 
-        # 具体数量评估由 Agent 根据 quality_criteria 自行判断
+        # 具体数量评估由 Agent 根据 quality-assessment SKILL 自行判断
         return score, issues, suggestions
 
     def _evaluate_industry_diversity_score(
@@ -353,7 +334,7 @@ class ScreeningQualityEvaluator:
     ) -> tuple[float, list[str], list[str]]:
         """评估行业多样性得分.
         
-        注意：具体的分散度标准由 quality-criteria.md 定义，Agent 自行判断。
+        注意：具体的分散度标准由 quality-assessment SKILL 定义，Agent 自行判断。
         此方法只做基本的技术检查。
         """
         issues = []
@@ -362,10 +343,10 @@ class ScreeningQualityEvaluator:
         # 基本检查：如果多样性极低，给出警告
         if diversity_score < 0.3:
             issues.append(f"行业集中度过高（多样性得分 {diversity_score:.2f}），缺乏分散化")
-            suggestions.append("参考 quality_criteria 中的标准，扩大行业范围以降低集中度风险")
+            suggestions.append("参考 quality-assessment SKILL 中的标准，扩大行业范围以降低集中度风险")
             return 0.6, issues, suggestions
         
-        # 其他情况由 Agent 根据 quality_criteria 自行判断
+        # 其他情况由 Agent 根据 quality-assessment SKILL 自行判断
         return 1.0, [], []
 
     def _evaluate_backtest_metrics(

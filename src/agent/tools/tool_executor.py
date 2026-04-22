@@ -38,15 +38,8 @@ def execute_tool_impl(
                 sig = inspect.signature(func)
                 
                 # 只有当工具函数签名包含 index_data 参数时才传入
-                if 'index_data' in sig.parameters:
-                    # 检查是否为空
-                    is_empty = (
-                        (hasattr(index_data, 'is_empty') and index_data.is_empty()) or
-                        (hasattr(index_data, 'empty') and index_data.empty) or
-                        len(index_data) == 0
-                    )
-                    if not is_empty:
-                        exec_params['index_data'] = index_data
+                if 'index_data' in sig.parameters and not index_data.is_empty():
+                    exec_params['index_data'] = index_data
         except (ImportError, KeyError):
             # 如果无法获取函数信息，跳过 index_data
             pass

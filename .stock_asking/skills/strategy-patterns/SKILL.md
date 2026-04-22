@@ -146,6 +146,13 @@ indicator1 * 0.5 + indicator2 * 0.3 + indicator3 * 0.2
 ```
 
 ## 注意事项
+
+**⚠️ 重要提示**：详细的规范和标准请参考以下文档：
+- **表达式设计规范**：`.stock_asking/rules/expression-design.md`
+- **工具返回值范围**：`.stock_asking/rules/tool-value-ranges.md`
+- **质量标准**：`.stock_asking/rules/quality-criteria.md`
+
+**核心要点**：
 1. 每个 var 必须唯一
 2. expression 中引用的 var 必须在 tools 中定义
 3. 参数名严格遵循工具定义

@@ -204,6 +204,11 @@ harness:
         hooks:
           - type: command
             command: "python .stock_asking/hooks/validate-strategy.py"
+    PostToolUse:
+      - matcher: "run_screening"
+        hooks:
+          - type: command
+            command: "python .stock_asking/hooks/validate-thresholds.py"
     Stop:
       - hooks:
           - type: command
@@ -246,10 +251,10 @@ if __name__ == "__main__":
 
 **规则文件位置**：`.stock_asking/rules/*.md`
 
-**示例规则**：
+**当前规则列表**：
 - `data-quality.md`：数据质量规则（禁止未来函数、停牌过滤等）
 - `expression-design.md`：表达式设计规范（禁止硬编码阈值、变量命名规范等）
-- `quality-criteria.md`：质量评估标准（候选数量区间、行业分散度、回测指标等）
+- `tool-value-ranges.md`：**工具返回值范围指南**（定义各工具的取值范围和合理阈值）
 
 **重要说明**：
 - Rules 是**全局强制约束**，无条件注入到所有 Agent 的 system prompt
@@ -336,16 +341,16 @@ else:
 
 #### 4.1 Quality Evaluator（质量评估器）
 
-对 Agent 输出进行多维度评分，从 `.stock_asking/rules/quality-criteria.md` 动态加载评估标准。
+对 Agent 输出进行多维度评分，质量标准参考 `.stock_asking/skills/quality-assessment/SKILL.md`。
 
 **核心设计**：
 - **技术性评估**：QualityEvaluator 只做基础技术检查（候选数量是否为0、行业多样性计算等）
-- **规则动态加载**：评估标准从 `quality-criteria.md` 加载，返回给 Agent 参考
-- **Agent 自主决策**：Agent 根据返回的 quality_criteria 自行判断和调整策略
+- **Skills 参考**：质量标准位于 `quality-assessment` Skill，Agent 按需查阅
+- **Agent 自主决策**：Agent 根据 quality-assessment SKILL 自行判断和调整策略
 - **参数错误检测**：自动识别工具参数验证失败，触发智能重试
 
 **评估维度**：
-- **候选数量**：基本检查（0个=失败），具体标准由 quality-criteria.md 定义
+- **候选数量**：基本检查（0个=失败），具体标准参考 quality-assessment SKILL
 - **行业多样性**：计算熵值评估行业分布均匀度
 - **回测指标**：夏普比率、最大回撤、胜率等技术指标
 - **代码规范性**：导入完整性、注释覆盖率、异常处理
@@ -353,14 +358,13 @@ else:
 
 **工作流程**：
 ```
-1. QualityEvaluator 初始化时加载 quality-criteria.md
-2. 执行技术性评估，计算基础分数
-3. **优先检测参数验证错误**（新增）
+1. QualityEvaluator 执行技术性评估，计算基础分数
+2. **优先检测参数验证错误**
    - 检查结果中是否包含 "参数验证失败"
    - 调用 _handle_param_validation_error() 提取智能建议
    - 返回 should_retry=True + 详细纠错建议
-4. 返回评估结果 + quality_criteria 原始内容
-5. Agent 根据 quality_criteria 自主调整策略
+3. 返回评估结果（不再返回 quality_criteria）
+4. Agent 根据需要查阅 quality-assessment SKILL 调整策略
 ```
 
 **输出示例**：
@@ -466,6 +470,116 @@ if quality.should_retry:
 - ✅ 首次筛选结果为空 → 自动放宽条件重试
 - ✅ 结果数量过多 → 自动增加过滤条件
 - ✅ 逻辑不一致 → 重新生成筛选表达式
+
+#### 4.4 PostToolUse Hook - 阈值验证（新增）
+
+在 `run_screening` 工具执行后，自动验证 Agent 生成的阈值是否在合理范围内。
+
+**核心价值**：
+- **实时拦截**：工具调用后立即验证，阻止明显错误的参数
+- **防止幻觉**：避免 LLM 生成不符合物理意义的阈值（如 RSI > 150）
+- **单一数据源**：只需维护 `tool-value-ranges.md`，Hook 自动解析
+- **自动纠正**：Agent 可根据错误消息自动调整阈值
+
+**工作原理**：
+1. **动态加载规则**：从 `.stock_asking/rules/tool-value-ranges.md` 解析工具返回值范围
+2. **提取比较表达式**：使用正则表达式识别 expression 中的阈值比较（如 `rsi14 > 30`）
+3. **范围检查**：对照规则验证每个阈值是否在合理范围内
+4. **退出码反馈**：
+   - `0`: 验证通过 ✅
+   - `1`: 警告（阈值接近边界）⚠️
+   - `2`: 阻止（阈值明显错误）❌
+
+**支持的工具类型**：
+
+| 类别 | 工具示例 | 取值范围 | 常见错误 |
+|------|---------|----------|----------|
+| 指数指标 | `outperform_rate`, `beta`, `alpha` | 0-1, 0-2, -1~1 | `outperform_rate > 30` |
+| 技术指标 | `rsi`, `macd`, `volatility` | 0-100, 可正可负, 0-1 | `rsi > 150` |
+| 数学变换 | `rank_normalize`, `zscore_normalize` | 0-1, 无固定范围 | - |
+| 统计指标 | `sharpe_ratio`, `max_drawdown` | 可正可负, 0-1 | - |
+
+**配置示例**：
+
+```yaml
+harness:
+  hooks:
+    PostToolUse:
+      - matcher: "run_screening"
+        hooks:
+          - type: command
+            command: "python hooks/validate-thresholds.py"
+```
+
+**验证示例**：
+
+```python
+# ❌ 错误：outperform_rate > 1.5（超过最大值1）
+# Hook 返回 exit code 2，阻止执行
+# 错误信息："[ERROR] Variable 'outperform_rate' threshold 1.5 exceeds maximum 1.0"
+
+# ✅ 正确：outperform_rate > 0.5（在合理范围内）
+# Hook 返回 exit code 0，允许继续
+
+# ⚠️ 警告：rsi > 95（接近上限100）
+# Hook 返回 exit code 1，记录警告但允许继续
+# 警告信息："[WARNING] Variable 'rsi' threshold 95 close to upper limit 100"
+```
+
+**技术实现**：
+
+```python
+# .stock_asking/hooks/validate-thresholds.py
+
+def parse_tool_value_ranges(md_file: Path) -> dict[str, dict]:
+    """从 tool-value-ranges.md 动态解析工具范围配置."""
+    # 正则匹配 Markdown 表格
+    # 智能识别多种格式："0-1", "-1 到 1", "通常 0-2"
+    ...
+
+def validate_thresholds(screening_logic: dict, tool_ranges: dict):
+    """验证筛选逻辑中的阈值是否合理."""
+    # 1. 提取 expression 中的比较表达式
+    #    例如："(rsi14 > 30) & (vol > vol_ma20 * 1.5)"
+    #    提取：rsi14 > 30, vol > vol_ma20 * 1.5
+    
+    # 2. 对照 tool_ranges 检查每个阈值
+    #    rsi14 对应 rsi 工具，范围 0-100，阈值 30 ✅
+    #    outperform_rate > 1.5，范围 0-1，阈值 1.5 ❌
+    
+    # 3. 返回 (exit_code, warnings, errors)
+    ...
+```
+
+**实际应用场景**：
+
+1. **防止 LLM 幻觉**：
+   ```python
+   # Agent 可能生成：outperform_rate > 30（误以为是百分比）
+   # Hook 拦截：outperform_rate 范围是 0-1，30 明显错误
+   # 提示 Agent：请使用 0-1 之间的小数，如 0.5 表示 50%
+   ```
+
+2. **单位混淆检测**：
+   ```python
+   # Agent 可能生成：rsi > 0.5（误用小数）
+   # Hook 警告：rsi 范围是 0-100，0.5 过于严格
+   # 建议：是否想表达 rsi < 30（超卖）？
+   ```
+
+3. **边界值提醒**：
+   ```python
+   # Agent 生成：beta < 0.1（极端保守）
+   # Hook 警告：beta 接近下限 0，可能导致候选过少
+   # 建议：考虑 beta < 0.5 或 beta < 0.8
+   ```
+
+**优势总结**：
+- ✅ **实时验证**：工具执行后立即检查，无需等待后续步骤
+- ✅ **智能拦截**：自动识别并阻止明显错误的参数
+- ✅ **自动纠正**：Agent 可根据错误消息自动调整阈值
+- ✅ **防止常见错误**：如 `outperform_rate > 30`、`rsi > 150` 等
+- ✅ **降低重试成本**：在早期阶段发现问题，避免无效计算
 
 ### 5. Tool Layer（工具层）
 

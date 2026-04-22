@@ -60,16 +60,20 @@ harness:
       - matcher: "run_screening"   # 仅对 run_screening 工具生效
         hooks:
           - type: command
-            command: "python .stock_asking/hooks/validate-strategy.py"
+            command: "python hooks/validate-strategy.py"
     
-    # 工具调用后检查（PostToolUse）- 当前为空，可按需添加
-    PostToolUse: []
+    # 工具调用后检查（PostToolUse）- 验证阈值合理性
+    PostToolUse:
+      - matcher: "run_screening"
+        hooks:
+          - type: command
+            command: "python hooks/validate-thresholds.py"
     
     # Agent 会话结束时的质量门禁（Stop）
     Stop:
       - hooks:
           - type: command
-            command: "python .stock_asking/hooks/quality-gate.py"
+            command: "python hooks/quality-gate.py"
 
 # ========== 2. Rules 规则引擎 ==========
 # 规则文件位于 .stock_asking/rules/*.md
@@ -78,6 +82,7 @@ harness:
 #   - quality-criteria.md    : 结果质量评估标准
 #   - expression-design.md   : 表达式设计规范
 #   - data-quality.md        : 数据质量要求
+#   - tool-value-ranges.md   : 工具返回值范围（阈值验证依据）
 
 # ========== 3. Permissions 权限控制 ==========
 permissions:

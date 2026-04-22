@@ -70,13 +70,7 @@ class IndexDataLoader:
             all_index_data = []
             for idx_code in index_codes:
                 index_data = self._load_index_data(idx_code, start_date, end_date)
-                # 兼容 polars 和 pandas
-                is_empty = (
-                    (hasattr(index_data, 'is_empty') and index_data.is_empty()) or
-                    (hasattr(index_data, 'empty') and index_data.empty) or
-                    len(index_data) == 0
-                )
-                if not is_empty and 'index_close' in index_data.columns:
+                if not index_data.is_empty() and 'index_close' in index_data.columns:
                     all_index_data.append(index_data)
             
             if not all_index_data:
@@ -260,14 +254,9 @@ class IndexDataLoader:
         
         index_data = repo.load(query)
         
-        # 检查是否为空（polars API）
-        if hasattr(index_data, 'is_empty'):
-            if index_data.is_empty() or 'close' not in index_data.columns:
-                return pl.DataFrame()
-        else:
-            # pandas fallback
-            if index_data.empty or 'close' not in index_data.columns:
-                return pd.DataFrame()
+        # 检查是否为空
+        if index_data.is_empty() or 'close' not in index_data.columns:
+            return pl.DataFrame()
         
         # 处理数据格式（保持 polars）
         index_data = index_data.rename({"close": "index_close"})
@@ -301,12 +290,7 @@ class IndexDataLoader:
             合并后的 DataFrame
         """
         # 如果指数数据为空，直接返回原始数据
-        is_index_empty = (
-            (hasattr(index_data, 'is_empty') and index_data.is_empty()) or
-            (hasattr(index_data, 'empty') and index_data.empty) or
-            len(index_data) == 0
-        )
-        if is_index_empty:
+        if index_data.is_empty():
             logger.warning("⚠️ 指数数据为空，跳过合并")
             return stock_data
         

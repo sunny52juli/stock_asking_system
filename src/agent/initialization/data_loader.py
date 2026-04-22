@@ -245,8 +245,7 @@ class DataLoader:
         
         stock = Stock(root=str(cache_root))
         basic_df = stock.universe()
-        # Polars: is_empty() 代替 .empty
-        if basic_df is None or (hasattr(basic_df, 'is_empty') and basic_df.is_empty()) or (hasattr(basic_df, 'empty') and basic_df.empty):
+        if basic_df is None or basic_df.is_empty():
             raise ValueError("无法获取股票基本信息")
         
         return basic_df
@@ -276,19 +275,13 @@ class DataLoader:
         stock = Stock(root=str(cache_root))
         df = stock.price(start_date=start_date, end_date=end_date)
         
-        # Polars: is_empty() 代替 .empty
-        if df is None or (hasattr(df, 'is_empty') and df.is_empty()) or (hasattr(df, 'empty') and df.empty):
+        if df is None or df.is_empty():
             raise ValueError(f"无法获取市场数据 ({start_date}~{end_date})")
         
         logger.info(f"📊 原始数据：{len(df)} 条记录，日期范围：{df['trade_date'].min()} ~ {df['trade_date'].max()}")
         
         # 过滤到股票池
-        if hasattr(df, 'filter'):
-            # Polars: 使用 filter 和 is_in
-            df = df.filter(pl.col("ts_code").is_in(stock_codes))
-        else:
-            # Pandas fallback
-            df = df[df["ts_code"].isin(stock_codes)].copy()
+        df = df.filter(pl.col("ts_code").is_in(stock_codes))
         
         logger.info(f"📊 过滤到股票池后：{len(df)} 条记录")
         

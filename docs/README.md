@@ -125,13 +125,24 @@ graph TB
 - **Long-term Memory**：跨会话持久化 (SQLite)
 - **Tool Provider**：统一管理MCP工具和本地Bridge工具
 - **Harness Framework**：Hooks/Rules/Permissions约束框架
-  - **Hooks Engine**：三阶段钩子 (PreToolUse/PostToolUse/Stop)
-  - **Rules Loader**：Markdown规则动态注入到system prompt（完整参数传递链）
+  - **Hooks Engine**：三阶段钩子 (PreToolUse/**PostToolUse**/Stop)
+    - PreToolUse：工具调用前验证（如 validate-strategy.py）
+    - **PostToolUse：工具调用后验证（如 validate-thresholds.py，自动检查阈值合理性）**
+    - Stop：会话结束前质量门禁（如 quality-gate.py）
+  - **Rules Loader**：Markdown规则动态注入到system prompt
+    - `data-quality.md`：数据质量规则
+    - `expression-design.md`：表达式设计规范
+    - **`tool-value-ranges.md`：工具返回值范围指南（阈值验证依据）**
   - **Permissions**：基于fnmatch的工具白名单/黑名单
 - **Quality & Retry System**：质量评估与智能重试
   - **Quality Evaluator**：多维度结果质量评分 + **参数错误自动检测**
   - **Smart Retry Manager**：错误分类+自适应参数调整
   - **Auto-fix Loop**：基于质量反馈的自动优化循环
+  - **PostToolUse Hook**：**工具执行后阈值验证**（新增）
+    - 动态加载 `.stock_asking/rules/tool-value-ranges.md`
+    - 自动检查 expression 中的阈值是否在合理范围内
+    - 防止常见错误：`outperform_rate > 30`、`rsi > 150` 等
+    - **实时拦截**：工具调用后立即验证，阻止明显错误的参数
 - **智能参数验证**：Pydantic 自动验证 + 智能纠错建议
 
 ### 3. Screening Engine - 股票筛选引擎
@@ -263,10 +274,12 @@ stock_asking_system/
 │   ├── rules/            # 规则文件目录
 │   │   ├── data-quality.md       # 数据质量规则
 │   │   ├── expression-design.md  # 表达式设计规范
-│   │   └── quality-criteria.md   # 质量评估标准
+│   │   └── tool-value-ranges.md  # 工具返回值范围指南
 │   └── skills/           # Agent技能库（按需加载）
 │       ├── stock-screening/      # 股票筛选技能
-│       └── strategy-patterns/    # 策略模式参考
+│       ├── strategy-patterns/    # 策略模式参考
+│       └── quality-assessment/   # 质量评估标准
+│           └── SKILL.md          # 质量标准与重试策略
 └── docs/                  # 文档
 ```
 
@@ -733,6 +746,28 @@ harness:
 uv sync
 ```
 ## 🎯 版本更新
+
+### v2.1 - Agent 架构优化与工具函数验证 (2026-04-22)
+
+**Agent 架构重构**：
+- 🎯 **Rules 与 Skills 职责分离**：将 `quality-criteria.md` 从 Rules 移至 Skills，明确强制规则与参考指南的边界
+- 📁 **目录结构优化**：`.stock_asking/skills/quality-assessment/SKILL.md` 作为质量标准参考，按需加载
+- ⚡ **减少 System Prompt**：移除冗余的质量标准注入，降低 token 消耗
+
+**工具函数合理性检测**：
+- ✅ **PostToolUse Hook 增强**：在 `run_screening` 工具执行后自动验证阈值合理性
+- 🛡️ **防止 LLM 幻觉**：拦截明显错误的参数（如 `outperform_rate > 30`、`rsi > 150`）
+- 🔄 **实时拦截机制**：工具调用后立即验证，阻止无效计算，降低重试成本
+- 📊 **动态规则加载**：从 `.stock_asking/rules/tool-value-ranges.md` 解析工具范围，单一数据源
+
+**配置修复**：
+- 🔧 **Hook 路径修正**：修复 `screening.yaml` 中 Hook 脚本路径重复问题（`.stock_asking/.stock_asking/hooks/` → `.stock_asking/hooks/`）
+- ✅ **Stop Hook 恢复**：解决 quality-gate.py 路径错误导致的结果被阻止问题
+
+**文档完善**：
+- 📖 **PostToolUse Hook 详细说明**：新增工作原理、应用场景、技术实现等完整章节
+- 📝 **实际案例补充**：提供 3 个典型应用场景（防止幻觉、单位混淆、边界值提醒）
+- 🎯 **优势总结**：强调实时验证、智能拦截、自动纠正等核心价值
 
 ### v2.0 - Polars 数据引擎与量化工具升级 (2026-04-19)
 

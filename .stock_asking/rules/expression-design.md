@@ -276,3 +276,8 @@ rank_normalize(1 - volatility_20d/volatility_ma60) * 0.6 + rank_normalize(excess
 (volatility_rank < 0.4) & (return_rank > 0.6) & (excess_return > 0)
 # 优势：使用分位数，自动适应市场分布，相对指数有超额收益
 ```
+
+## 与其他规则的关联
+
+- **工具返回值范围**: 见 `.stock_asking/rules/tool-value-ranges.md`
+- **质量标准**: 见 `.stock_asking/rules/quality-criteria.md`

@@ -207,14 +207,7 @@ class SyncRepository(Repository):
             )
             logger.debug("🚀 Attempting direct range load: %s ~ %s", query.start_date, query.end_date)
             result = self._fetch_range_direct(range_query, meta, pipeline)
-            # 兼容 polars 和 pandas
-            is_empty = (
-                (hasattr(result, 'is_empty') and result.is_empty()) or
-                (hasattr(result, 'empty') and result.empty) or
-                result is None or
-                len(result) == 0
-            )
-            if not is_empty:
+            if result is not None and not result.is_empty():
                 # 验证返回的数据是否包含完整的日期范围
                 if meta.date_column and meta.date_column in result.columns:
                     actual_dates = sorted(result[meta.date_column].unique().to_list())
