@@ -723,7 +723,6 @@ uv sync
 
 ## 🙏 致谢
 
-- **参考项目**：[QuantitativeSystem](https://github.com/luocheng812/QuantitativeSystem/tree/develop) - 感谢 luocheng812 对本框架的设计贡献
 - **开源框架**：
   - [LangChain](https://python.langchain.com/) - 提供强大的 LLM 应用开发框架和 MCP 集成支持
   - [Neo4j](https://neo4j.com/) - 提供高性能图数据库，支撑记忆系统的关系存储和语义搜索
