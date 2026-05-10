@@ -79,7 +79,7 @@ author: Quant Team
 - `abs_value(values)`, `log_transform(values)`, `sqrt_transform(values)`
 
 ## Bridge 工具
-- `run_screening(screening_logic_json, top_n=20)` - 执行筛选
+- `run_screening(screening_logic_json, top_n)` - 执行筛选（默认返回 Top 10）
 - `get_available_industries()` - 获取行业列表
 - `save_screening_script(screening_logic_json, query)` - 保存脚本
 
@@ -161,18 +161,12 @@ author: Quant Team
 
 ## 关键规则
 
-**⚠️ 重要提示**：详细的规范和标准请参考以下文档：
-- **表达式设计规范**：`.stock_asking/rules/expression-design.md`
-- **工具返回值范围**：`.stock_asking/rules/tool-value-ranges.md`
-- **质量标准**：`.stock_asking/rules/quality-criteria.md`
-- **数据质量规则**：`.stock_asking/rules/data-quality.md`
-
-**核心要点**：
-1. **参数命名**: 所有工具第一个参数必须是 `values` 或 `column`
-2. **变量一致性**: expression 中的变量名必须与 tools 定义的 `var` 完全一致
-3. **百分比**: 用小数表示 (3% = 0.03)
-4. **质量标准**: 候选数量 10-30 个为最佳
-5. **注意**: 行业、ST、停牌、市值等过滤已由 StockPoolService 统一处理，无需在策略中重复
+**⚠️ 核心约束（必须遵守）**：
+1. **数据职责**：ST、停牌、市值等基础过滤已由 `StockPoolService` 统一处理，**严禁**在策略中重复。
+2. **数值范围**：所有阈值设置必须参考 [工具返回值范围指南](../../rules/tool-value-ranges.md)。
+3. **变量一致性**：`expression` 中的变量名必须与 `tools` 定义的 `var` 完全一致。
+4. **百分比表示**：统一使用小数 (例如 3% 写作 0.03)。
+5. **量纲规范**：禁止对绝对标准差进行无意义的除法操作，请使用 `zscore_normalize` 或专业指标（如 Beta）。
 
 ## 常见错误
 - ❌ 使用不存在的字段 (`volume` → 应为 `vol`)

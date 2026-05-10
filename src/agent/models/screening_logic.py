@@ -1,4 +1,4 @@
-"""Screening Logic 数据模型 - 用于强制 Agent 输出结构化数据."""
+﻿"""Screening Logic 数据模型 - 用于强制 Agent 输出结构化数据."""
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Any
@@ -191,7 +191,7 @@ class ScreeningLogic(BaseModel):
             
             if tool_names_in_expr:
                 error_msg += (
-                    f"\n\n⚠️ 错误：表达式中直接使用了工具函数名 {', '.join(sorted(tool_names_in_expr))}！"
+                    f"\n\n[WARN] 错误：表达式中直接使用了工具函数名 {', '.join(sorted(tool_names_in_expr))}！"
                     f"\n正确做法："
                     f"\n1. 在 tools 列表中定义变量，例如：{{'var': 'ma20', 'tool': 'rolling_mean', ...}}"
                     f"\n2. 在表达式中使用变量名，例如：'expression': 'ma20 > close'"

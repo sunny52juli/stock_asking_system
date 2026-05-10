@@ -1,4 +1,4 @@
-"""SubAgent 抽象基类 - 统一智能体调用接口."""
+﻿"""SubAgent 抽象基类 - 统一智能体调用接口."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ class BaseSubAgent(ABC):
             
             result.setdefault("status", "success")
             
-            logger.debug(f"✅ 子智能体 {self.name} 执行完成 ({execution_time:.2f}s)")
+            logger.debug(f"[OK] 子智能体 {self.name} 执行完成 ({execution_time:.2f}s)")
             
             return {
                 "agent": self.name,
@@ -97,7 +97,7 @@ class BaseSubAgent(ABC):
         except Exception as e:
             execution_time = time.time() - start_time
             
-            logger.error(f"❌ 子智能体 {self.name} 执行失败：{e}", exc_info=True)
+            logger.error(f"[ERROR] 子智能体 {self.name} 执行失败：{e}", exc_info=True)
             
             return {
                 "agent": self.name,
@@ -146,7 +146,7 @@ class AgentOrchestrator:
             
             # 如果某个智能体失败，可以选择停止或继续
             if result["status"] == "failure":
-                logger.warning(f"⚠️  子智能体 {agent.name} 失败，继续执行下一个")
+                logger.warning(f"[WARN]  子智能体 {agent.name} 失败，继续执行下一个")
         
         return results
     

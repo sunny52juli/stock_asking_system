@@ -136,7 +136,7 @@ class BacktestEngine:
                 original_screen_with_data = module.screen_with_data
                 index_data = self.index_data
                 
-                def patched_screen_with_data(data, top_n=20, screening_date=None):
+                def patched_screen_with_data(data, top_n=10, screening_date=None):
                     """包装函数，注入指数数据"""
                     # 动态导入 StockScreener
                     from utils.screening.stock_screener import StockScreener as Screener
@@ -155,7 +155,7 @@ class BacktestEngine:
             # 执行筛选
             candidates = module.screen_with_data(
                 self.data,
-                top_n=20,
+                top_n=10,
                 screening_date=self.screening_date
             )
             

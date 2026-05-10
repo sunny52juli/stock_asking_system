@@ -1,6 +1,7 @@
 """指数工具辅助函数 - 统一的收益率预处理和合并逻辑."""
 import polars as pl
-from mcp_server.executors.index_selector import get_index_code
+
+from datahub.domain.index_selector import get_index_code
 
 
 def prepare_index_returns(index_data: pl.DataFrame) -> dict[str, pl.DataFrame]:

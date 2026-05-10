@@ -5,13 +5,16 @@ Output columns align with docs/data/TUSHARE_API_REFERENCE.md where applicable.
 
 from __future__ import annotations
 
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
+
+if TYPE_CHECKING:
+    import polars as pl
 
 
 class StockProtocol(Protocol):
     """Stock. Entry: from datahub import Stock; s = Stock()."""
 
-    def universe(self) -> pd.DataFrame:
+    def universe(self) -> pl.DataFrame:
         """Stock basic list. Columns: ts_code, symbol, name, area, industry, fullname, enname,
         cnspell, market, exchange, curr_type, list_status, list_date, delist_date, is_hs,
         act_name, act_ent_type. Tushare: stock_basic."""
@@ -25,7 +28,7 @@ class StockProtocol(Protocol):
         end_date: str | None = None,
         codes: list[str] | None = None,
         fields: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Daily quotes. Columns: ts_code, trade_date, open, high, low, close, pre_close,
         change, pct_chg, vol, amount. Tushare: daily (may merge daily_basic)."""
         ...
@@ -37,7 +40,7 @@ class StockProtocol(Protocol):
         date: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Index constituents. Columns: index_code, con_code, trade_date, weight.
         Tushare: index_weight."""
         ...
@@ -57,7 +60,7 @@ class StockProtocol(Protocol):
         end_date: str,
         freq: str = "daily",
         adj: str = "post",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Returns series. Columns: ts_code, date, return (and/or freq). From price + adj_factor."""
         ...
 
@@ -68,7 +71,7 @@ class StockProtocol(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
         codes: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Liquidity/turnover. Columns: ts_code, trade_date, turnover_rate, turnover_rate_f,
         volume_ratio, etc. Tushare: daily_basic."""
         ...
@@ -80,7 +83,7 @@ class StockProtocol(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
         direction: str = "both",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Limit up/down list. Columns: trade_date, ts_code, industry, name, close, pct_chg,
         amp, fc_ratio, flt_ratio, turnover, fd_amount, first_time, last_time, open_times,
         strth, limit_type. Tushare: limit_list."""
@@ -94,7 +97,7 @@ class StockProtocol(Protocol):
         end_date: str | None = None,
         codes: list[str] | None = None,
         fields: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Daily valuation. Columns: ts_code, trade_date, close, turnover_rate, turnover_rate_f,
         volume_ratio, pe, pe_ttm, pb, ps, ps_ttm, dv_ratio, dv_ttm, total_share, float_share,
         free_share, total_mv, circ_mv. Tushare: daily_basic."""
@@ -107,7 +110,7 @@ class StockProtocol(Protocol):
         end_date: str,
         period_type: str = "annual",
         fields: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Income/balance/cashflow. Columns: 100+ fields (revenue, cost, profit, etc).
         Tushare: income, balancesheet, cashflow."""
         ...
@@ -118,7 +121,7 @@ class StockProtocol(Protocol):
         start_date: str,
         end_date: str,
         include_estimates: bool = False,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Earnings/forecast. Columns: ts_code, ann_date, end_date, type, p_change_min,
         p_change_max, net_profit_min, net_profit_max, etc. Tushare: forecast, express."""
         ...
@@ -130,7 +133,7 @@ class StockProtocol(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
         codes: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Money flow. Columns: ts_code, trade_date, buy_sm_vol, buy_sm_amount, sell_sm_vol,
         sell_sm_amount, buy_md_vol, buy_md_amount, sell_md_vol, sell_md_amount, buy_lg_vol,
         buy_lg_amount, sell_lg_vol, sell_lg_amount, buy_elg_vol, buy_elg_amount, sell_elg_vol,
@@ -144,7 +147,7 @@ class StockProtocol(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
         codes: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Margin/margin detail. Columns: ts_code, trade_date, rzye, rqye, rzmre, rqyl,
         rzche, rqchl, rzmcl, rzrqye. Tushare: margin_detail."""
         ...
@@ -155,7 +158,7 @@ class StockProtocol(Protocol):
         start_date: str,
         end_date: str,
         status: str = "all",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Dividend. Columns: ts_code, ann_date, record_date, ex_date, pay_date, div_proc, etc.
         Tushare: dividend."""
         ...
@@ -166,7 +169,7 @@ class StockProtocol(Protocol):
         start_date: str,
         end_date: str,
         action_type: str = "all",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Corporate actions (dividend, buyback, etc). Tushare: dividend, repurchase, etc."""
         ...
 
@@ -175,7 +178,7 @@ class StockProtocol(Protocol):
         code: str,
         date: str,
         holder_type: str = "all",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Holder/ownership. Tushare: stk_holdernumber, holder."""
         ...
 
@@ -184,7 +187,7 @@ class StockProtocol(Protocol):
         code: str,
         start_date: str,
         end_date: str,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Insider trading. Tushare: stk_holdertrade."""
         ...
 
@@ -200,7 +203,7 @@ class FundProtocol(Protocol):
         end_date: str | None = None,
         codes: list[str] | None = None,
         fields: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Fund NAV. Columns: ts_code, ann_date, nav_date, unit_nav, accum_nav, accum_div,
         net_asset, total_netasset, adj_nav, update_flag. Tushare: fund_nav."""
         ...
@@ -219,13 +222,13 @@ class FundProtocol(Protocol):
         fund_type: str | None = None,
         status: str = "active",
         fields: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Fund list. Columns: ts_code, name, management, custodian, fund_type, found_date,
         due_date, list_date, issue_date, delist_date, issue_amount, invest_type, type, status,
         etc. Tushare: fund_basic."""
         ...
 
-    def profile(self, code: str) -> pd.DataFrame:
+    def profile(self, code: str) -> pl.DataFrame:
         """Single fund profile. Same columns as universe. Tushare: fund_basic."""
         ...
 
@@ -235,7 +238,7 @@ class FundProtocol(Protocol):
         start_date: str,
         end_date: str,
         freq: str = "daily",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Fund returns. Columns: ts_code, date, return (from nav)."""
         ...
 
@@ -246,7 +249,7 @@ class FundProtocol(Protocol):
         end_date: str,
         benchmark: str | None = None,
         freq: str = "monthly",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Risk metrics (volatility, Sharpe, etc). Derived from nav/returns."""
         ...
 
@@ -258,16 +261,16 @@ class FundProtocol(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
         asset_type: str = "equity",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Fund portfolio. Columns: ts_code, ann_date, end_date, symbol, type, shares,
         market_val, ratio. Tushare: fund_portfolio."""
         ...
 
-    def sector_exposure(self, code: str, period: str) -> pd.DataFrame:
+    def sector_exposure(self, code: str, period: str) -> pl.DataFrame:
         """Sector exposure. Derived from holdings/industry."""
         ...
 
-    def top_positions(self, code: str, period: str, top_n: int = 10) -> pd.DataFrame:
+    def top_positions(self, code: str, period: str, top_n: int = 10) -> pl.DataFrame:
         """Top N positions. Same columns as holdings. Tushare: fund_portfolio."""
         ...
 
@@ -276,7 +279,7 @@ class FundProtocol(Protocol):
         codes: list[str],
         start_date: str,
         end_date: str,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """AUM history. From nav * shares."""
         ...
 
@@ -285,7 +288,7 @@ class FundProtocol(Protocol):
         code: str,
         start_date: str,
         end_date: str,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Fund dividend/distribution. Tushare: fund_div."""
         ...
 
@@ -300,7 +303,7 @@ class IndexProtocol(Protocol):
         date: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Index constituents. Columns: index_code, con_code, trade_date, weight.
         Tushare: index_weight."""
         ...
@@ -319,7 +322,7 @@ class IndexProtocol(Protocol):
         start_date: str,
         end_date: str,
         freq: str = "daily",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Index OHLC. Columns: ts_code, trade_date, close, open, high, low, pre_close,
         pct_change, vol, amount. Tushare: index_daily."""
         ...
@@ -331,7 +334,7 @@ class IndexProtocol(Protocol):
         end_date: str,
         freq: str = "daily",
         include_dividends: bool = True,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Index returns. Derived from level."""
         ...
 
@@ -342,7 +345,7 @@ class IndexProtocol(Protocol):
         date: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Index valuation. Tushare: index_valuation if available."""
         ...
 
@@ -354,7 +357,7 @@ class IndexProtocol(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
         codes: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Index weights. Columns: index_code, con_code, trade_date, weight.
         Tushare: index_weight."""
         ...
@@ -364,7 +367,7 @@ class IndexProtocol(Protocol):
         index_code: str,
         start_date: str,
         end_date: str,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Rebalance history. From index_weight changes."""
         ...
 
@@ -373,11 +376,11 @@ class IndexProtocol(Protocol):
         index_code: str,
         date: str,
         level: int = 1,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Sector breakdown. From members + industry."""
         ...
 
-    def catalog(self, family: str | None = None) -> pd.DataFrame:
+    def catalog(self, family: str | None = None) -> pl.DataFrame:
         """Index catalog. Columns: ts_code, name, fullname, market, publisher, index_type,
         category, base_date, base_point, list_date, weight_rule, desc, exp_date.
         Tushare: index_basic, index_classify."""
@@ -396,7 +399,7 @@ class NewsProtocol(Protocol):
         end_date: str | None = None,
         source: Literal["news", "social", "analyst", "combined"] = "combined",
         window: int = 7,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Sentiment scores. Columns vary by source (code, date, score, etc)."""
         ...
 
@@ -416,7 +419,7 @@ class NewsProtocol(Protocol):
             "regulatory",
             "all",
         ] = "all",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Events. Columns: code, date, event_type, title, summary, etc."""
         ...
 
@@ -426,7 +429,7 @@ class NewsProtocol(Protocol):
         code: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Earnings surprise. Columns: code, date, actual, estimate, surprise, etc."""
         ...
 
@@ -445,7 +448,7 @@ class NewsProtocol(Protocol):
             "prospectus",
             "all",
         ] = "all",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Filings/announcements. Tushare anns: ts_code, ann_date, title, content, etc."""
         ...
 
@@ -456,7 +459,7 @@ class NewsProtocol(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
         action: Literal["initiation", "upgrade", "downgrade", "reiterate", "all"] = "all",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Analyst ratings. Columns: code, date, action, rating, target_price, etc."""
         ...
 
@@ -467,7 +470,7 @@ class NewsProtocol(Protocol):
         date: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Consensus estimates. Columns: code, date, eps, revenue, etc."""
         ...
 
@@ -478,7 +481,7 @@ class NewsProtocol(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
         period: Literal["fy1", "fy2"] = "fy1",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Estimate revisions. Columns: code, date, period, revision, etc."""
         ...
 
@@ -496,7 +499,7 @@ class NewsProtocol(Protocol):
             "all",
         ] = "all",
         codes: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Event calendar. Columns: code, date, event_type, description. Tushare: disclosure_date."""
         ...
 
@@ -540,7 +543,7 @@ class FeatureProtocol(Protocol):
         *,
         date: str,
         universe: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Factor snapshot. Columns: ts_code (or code), trade_date, plus one column per factor
         (e.g. pe_ttm, momentum_1m). Built from daily/daily_basic/adj_factor."""
         ...
@@ -553,7 +556,7 @@ class FeatureProtocol(Protocol):
         end_date: str,
         universe: list[str] | None = None,
         freq: Literal["D", "W", "M"] = "D",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Factor history. Columns: ts_code, trade_date, factor_1, factor_2, ..."""
         ...
 
@@ -565,7 +568,7 @@ class FeatureProtocol(Protocol):
         universe: list[str] | None = None,
         method: Literal["percentile", "zscore", "rank"] = "percentile",
         neutralize_by: list[Literal["industry", "size"]] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Factor cross-sectional rank. Columns: ts_code, trade_date, factor, rank (or percentile)."""
         ...
 
@@ -576,7 +579,7 @@ class FeatureProtocol(Protocol):
         *,
         date: str,
         normalize: bool = True,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Factor exposure. Columns: factor, exposure (and optionally industry/size)."""
         ...
 
@@ -589,7 +592,7 @@ class FeatureProtocol(Protocol):
         sort_by: str | None = None,
         ascending: bool = False,
         top_n: int | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Screen by factor rules. Columns: ts_code, trade_date, factor columns, pass/fail."""
         ...
 
@@ -600,7 +603,7 @@ class FeatureProtocol(Protocol):
         date: str,
         n_quantiles: int = 5,
         universe: list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Quantile portfolios. Columns: ts_code, trade_date, factor, quantile (1..n)."""
         ...
 
@@ -613,7 +616,7 @@ class FeatureProtocol(Protocol):
         forward_returns_period: int = 20,
         universe: list[str] | None = None,
         method: Literal["pearson", "spearman"] = "spearman",
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """IC time series. Columns: trade_date, ic (and optionally pvalue)."""
         ...
 
@@ -625,7 +628,7 @@ class FeatureProtocol(Protocol):
         end_date: str,
         universe: list[str] | None = None,
         long_short: bool = True,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Factor return series. Columns: trade_date, return (long-short or long)."""
         ...
 

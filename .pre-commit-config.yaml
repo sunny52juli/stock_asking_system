@@ -34,30 +34,12 @@ repos:
   # 4. 自定义 Hooks
   - repo: local
     hooks:
-      # 敏感信息检测
-      - id: no-secrets
-        name: 🔒 敏感信息检测
-        entry: python .stock_asking/hooks/no-secrets.py
-        language: system
-        types: [python, yaml, json]
-        stages: [pre-commit]
-      
-      # 代码质量检查
-      - id: lint-check
-        name: 🔍 代码质量检查
-        entry: python .stock_asking/hooks/lint-check.py
-        language: system
-        types: [python]
-        stages: [pre-commit]
-        pass_filenames: true
-      
-      # 测试门禁 (可选，仅在 commit 前运行关键测试)
-      - id: test-gate
-        name: 🧪 测试门禁
-        entry: python .stock_asking/hooks/test-gate.py
+      # 统一验证策略与工具调用
+      - id: tool-call-validator
+        name: ✅ 策略与工具验证
+        entry: python .stock_asking/hooks/tool-call-validator.py
         language: system
         stages: [pre-commit]
-        always_run: true
         pass_filenames: false
 
 # 排除的文件/目录

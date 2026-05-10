@@ -24,6 +24,8 @@ class ToolExecutor:
         self.index_data = index_data
         # 自动检测哪些工具需要 index_data 参数
         self._index_tool_cache = {}
+        # 缓存可用工具列表
+        self._available_tools = None
     
     def _needs_index_data(self, tool_name: str) -> bool:
         """检查工具是否需要 index_data 参数."""
@@ -101,8 +103,9 @@ class ToolExecutor:
                 params = tool_registry.validate_params(tool_name, params)
                 
                 # 调用 MCP 工具执行器，仅指数工具传递 index_data
-                if needs_index and self.index_data is not None:
-                    logger.debug(f"   调用工具 {tool_name}，index_data: {len(self.index_data)} 条记录")
+                if needs_index:
+                    # 即使 index_data 为 None 也要传递，让工具自己处理
+                    logger.debug(f"   调用工具 {tool_name}，index_data: {'可用' if self.index_data is not None else 'None'}")
                     tool_result = execute_tool(
                         tool_name=tool_name,
                         data=working_data,
@@ -143,6 +146,24 @@ class ToolExecutor:
                 else:
                     # 不可恢复错误（系统问题）：立即抛出
                     logger.error(f"         🛑 不可恢复错误，终止执行")
+                    
+                    # ✅ 增强错误提示：如果工具不存在，给出建议
+                    error_msg = str(e)
+                    if "Unknown tool" in error_msg:
+                        import re
+                        match = re.search(r"Unknown tool: (\w+)", error_msg)
+                        if match:
+                            unknown_tool = match.group(1)
+                            # 提供可能的正确工具名
+                            suggestions = self._get_similar_tool_names(unknown_tool)
+                            if suggestions:
+                                suggestion_text = "、".join(suggestions)
+                                raise RuntimeError(
+                                    f"工具 '{unknown_tool}' 不存在\n"
+                                    f"💡 可用的相似工具: {suggestion_text}\n"
+                                    f"提示：请检查工具名称是否正确"
+                                ) from e
+                    
                     raise RuntimeError(
                         f"工具 '{tool_name}' 执行失败（不可恢复）: {e}\n"
                         f"提示：请检查表达式语法或工具参数是否正确"
@@ -254,6 +275,38 @@ class ToolExecutor:
         ]
         
         return any(pattern in error_msg for pattern in recoverable_patterns)
+    
+    def _get_similar_tool_names(self, unknown_tool: str, max_suggestions: int = 5) -> list[str]:
+        """获取与未知工具名相似的工具建议.
+        
+        Args:
+            unknown_tool: 未知的工具名
+            max_suggestions: 最大建议数量
+            
+        Returns:
+            相似工具名列表
+        """
+        if self._available_tools is None:
+            # 延迟加载可用工具列表
+            from mcp_server.executors import TOOL_FUNCTIONS
+            self._available_tools = list(TOOL_FUNCTIONS.keys())
+        
+        # 简单的字符串相似度匹配（包含关系）
+        suggestions = []
+        unknown_lower = unknown_tool.lower()
+        
+        for tool_name in self._available_tools:
+            tool_lower = tool_name.lower()
+            # 如果工具名包含未知工具名的部分，或者反之
+            if (unknown_lower in tool_lower or 
+                tool_lower in unknown_lower or
+                # 或者前缀相似
+                tool_lower.startswith(unknown_lower[:3])):
+                suggestions.append(tool_name)
+                if len(suggestions) >= max_suggestions:
+                    break
+        
+        return suggestions
 
     def _topological_sort_tools(
         self,

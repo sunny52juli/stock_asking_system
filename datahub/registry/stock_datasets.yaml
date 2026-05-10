@@ -1,0 +1,214 @@
+# 股票数据集配置
+# 定义所有股票相关数据集的元信息和获取管道
+
+datasets:
+  # STOCK_DAILY: 股票日线数据 - 6步管道
+  STOCK_DAILY:
+    meta:
+      domain: "stock"
+      partition_by: "date"
+      key_columns: ["ts_code", "trade_date"]
+      storage_path: "stock/daily"
+      date_column: "trade_date"
+      code_column: "ts_code"
+      partition_key_template: "{date}"
+      description: "股票日线行情数据（含基本信息、每日指标、复权因子、资金流向、融资融券）"
+    
+    pipeline:
+      # Step 1: 基础日线行情
+      - api_name: "daily"
+        param_mapping:
+          trade_date: "date"
+        fields:
+          - "ts_code"
+          - "trade_date"
+          - "open"
+          - "high"
+          - "low"
+          - "close"
+          - "pre_close"
+          - "change"
+          - "pct_chg"
+          - "vol"
+          - "amount"
+        merge_on: ["ts_code"]
+      
+      # Step 2: 基本信息合并
+      - api_name: "stock_basic"
+        param_mapping: {}
+        fixed_params:
+          exchange: ""
+          list_status: "L"
+        fields:
+          - "ts_code"
+          - "name"
+          - "area"
+          - "industry"
+          - "market"
+          - "list_date"
+        merge_on: ["ts_code"]
+        optional: true
+      
+      # Step 3: 每日指标合并 (daily_basic)
+      - api_name: "daily_basic"
+        param_mapping:
+          trade_date: "date"
+        fields:
+          - "ts_code"
+          - "trade_date"
+          - "close"
+          - "turnover_rate"
+          - "turnover_rate_f"
+          - "volume_ratio"
+          - "pe"
+          - "pe_ttm"
+          - "pb"
+          - "ps"
+          - "ps_ttm"
+          - "dv_ratio"
+          - "dv_ttm"
+          - "total_share"
+          - "float_share"
+          - "free_share"
+          - "total_mv"
+          - "circ_mv"
+        merge_on: ["ts_code", "trade_date"]
+        optional: true
+      
+      # Step 4: 复权因子合并
+      - api_name: "adj_factor"
+        param_mapping:
+          trade_date: "date"
+        fields:
+          - "ts_code"
+          - "trade_date"
+          - "adj_factor"
+        merge_on: ["ts_code", "trade_date"]
+        optional: true
+      
+      # Step 5: 资金流向合并
+      - api_name: "moneyflow"
+        param_mapping:
+          trade_date: "date"
+        fields:
+          - "ts_code"
+          - "trade_date"
+          - "buy_sm_vol"
+          - "buy_sm_amount"
+          - "sell_sm_vol"
+          - "sell_sm_amount"
+          - "buy_md_vol"
+          - "buy_md_amount"
+          - "sell_md_vol"
+          - "sell_md_amount"
+          - "buy_lg_vol"
+          - "buy_lg_amount"
+          - "sell_lg_vol"
+          - "sell_lg_amount"
+          - "buy_elg_vol"
+          - "buy_elg_amount"
+          - "sell_elg_vol"
+          - "sell_elg_amount"
+          - "net_mf_vol"
+          - "net_mf_amount"
+        merge_on: ["ts_code", "trade_date"]
+        optional: true
+      
+      # Step 6: 融资融券合并
+      - api_name: "margin_detail"
+        param_mapping:
+          trade_date: "date"
+        fields:
+          - "ts_code"
+          - "trade_date"
+          - "rzye"
+          - "rqye"
+          - "rzmre"
+          - "rqyl"
+          - "rzche"
+          - "rqchl"
+          - "rqmcl"
+          - "rzrqye"
+        merge_on: ["ts_code", "trade_date"]
+        optional: true
+
+  # STOCK_INDEX_WEIGHT: 指数成分股权重
+  STOCK_INDEX_WEIGHT:
+    meta:
+      domain: "stock"
+      partition_by: "composite"
+      key_columns: ["index_code", "con_code", "trade_date"]
+      storage_path: "stock/index_weight"
+      date_column: "trade_date"
+      code_column: "con_code"
+      partition_key_template: "{index_code}_{date}"
+      description: "指数成分股权重数据"
+    
+    pipeline:
+      - api_name: "index_weight"
+        param_mapping:
+          trade_date: "date"
+          index_code: "index_code"
+        fields: null
+        merge_on: []
+
+  # STOCK_BASIC: 股票基本信息列表快照
+  STOCK_BASIC:
+    meta:
+      domain: "stock"
+      partition_by: "none"
+      key_columns: ["ts_code"]
+      storage_path: "stock/basic"
+      date_column: ""
+      code_column: "ts_code"
+      partition_key_template: "basic"
+      description: "股票基本信息列表"
+    
+    pipeline:
+      - api_name: "stock_basic"
+        param_mapping: {}
+        fixed_params:
+          exchange: ""
+          list_status: "L"
+        fields:
+          - "ts_code"
+          - "symbol"
+          - "name"
+          - "area"
+          - "industry"
+          - "market"
+          - "list_date"
+        merge_on: []
+
+  # STOCK_VALUATION: 股票估值指标
+  STOCK_VALUATION:
+    meta:
+      domain: "stock"
+      partition_by: "date"
+      key_columns: ["ts_code", "trade_date"]
+      storage_path: "stock/valuation"
+      date_column: "trade_date"
+      code_column: "ts_code"
+      partition_key_template: "{date}"
+      description: "股票估值指标（PE/PB/PS/股息率/量比/换手率/市值）"
+    
+    pipeline:
+      - api_name: "daily_basic"
+        param_mapping:
+          trade_date: "date"
+        fields:
+          - "ts_code"
+          - "trade_date"
+          - "turnover_rate"
+          - "turnover_rate_f"
+          - "volume_ratio"
+          - "pe"
+          - "pe_ttm"
+          - "pb"
+          - "ps"
+          - "ps_ttm"
+          - "dv_ratio"
+          - "dv_ttm"
+          - "total_mv"
+          - "circ_mv"
+        merge_on: ["ts_code", "trade_date"]

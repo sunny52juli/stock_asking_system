@@ -16,10 +16,20 @@ from pydantic import BaseModel, create_model, Field
 class ToolRegistry:
     """工具注册器."""
     
+    # 全局参数别名规则：{正确参数名: [常见别名]}
+    PARAM_ALIASES = {
+        'column': ['values', 'value', 'col', 'data_column'],
+        'window': ['n', 'period', 'periods', 'lookback', 'length'],
+        'fast': ['fast_period', 'fast_length'],
+        'slow': ['slow_period', 'slow_length'],
+        'signal': ['signal_period', 'signal_length'],
+    }
+    
     def __init__(self):
         self._tools: dict[str, dict[str, Any]] = {}
         self._functions: dict[str, Callable] = {}
         self._validators: dict[str, type[BaseModel]] = {}  # Pydantic 验证器
+        self._param_aliases: dict[str, dict[str, str]] = {}  # 每个工具的参数别名映射
     
     def register(
         self,
@@ -113,6 +123,9 @@ class ToolRegistry:
             )
             self._validators[tool_name] = validator_class
             
+            # 自动生成参数别名映射
+            self._param_aliases[tool_name] = self._build_param_aliases(field_definitions.keys())
+            
             return func
         
         return decorator
@@ -141,15 +154,58 @@ class ToolRegistry:
         if tool_name not in self._validators:
             raise ValueError(f"Unknown tool: {tool_name}")
         
+        # 先尝试自动纠正常见参数错误
+        corrected_params = self._auto_correct_params(tool_name, params)
+        
         validator = self._validators[tool_name]
         try:
-            validated = validator(**params)
+            validated = validator(**corrected_params)
             return validated.model_dump()
         except Exception as e:
             # 提供智能纠错建议
-            suggestion = self._get_param_suggestion(tool_name, params, str(e))
+            suggestion = self._get_param_suggestion(tool_name, corrected_params, str(e))
             error_msg = f"参数验证失败 [{tool_name}]:\n{suggestion}"
             raise ValueError(error_msg) from e
+    
+    def _build_param_aliases(self, param_names: list[str]) -> dict[str, str]:
+        """根据参数名自动生成别名映射.
+        
+        Args:
+            param_names: 工具的参数名列表
+            
+        Returns:
+            {别名: 正确参数名} 的映射
+        """
+        aliases = {}
+        for correct_name in param_names:
+            if correct_name in self.PARAM_ALIASES:
+                for alias in self.PARAM_ALIASES[correct_name]:
+                    aliases[alias] = correct_name
+        return aliases
+    
+    def _auto_correct_params(self, tool_name: str, params: dict) -> dict:
+        """自动纠正常见的参数名错误.
+        
+        Args:
+            tool_name: 工具名称
+            params: 原始参数字典
+            
+        Returns:
+            纠正后的参数字典
+        """
+        # 获取该工具的参数别名映射
+        aliases = self._param_aliases.get(tool_name, {})
+        if not aliases:
+            return params
+        
+        corrected = params.copy()
+        
+        for wrong_name, correct_name in aliases.items():
+            if wrong_name in corrected and correct_name not in corrected:
+                # 自动纠正参数名
+                corrected[correct_name] = corrected.pop(wrong_name)
+        
+        return corrected
     
     def _get_param_suggestion(self, tool_name: str, params: dict, error_str: str) -> str:
         """根据工具名称和错误信息提供智能参数建议.
@@ -164,34 +220,15 @@ class ToolRegistry:
         """
         import re
         
-        # 常见参数错误映射
+        # 复用 _auto_correct_params 中的映射表
         common_mistakes = {
-            "rank_normalize": {
-                "values": "column",
-                "value": "column",
-            },
-            "rolling_mean": {
-                "n": "window",
-                "period": "window",
-                "periods": "window",
-            },
-            "rolling_std": {
-                "n": "window",
-                "period": "window",
-            },
-            "rsi": {
-                "n": "window",
-                "period": "window",
-            },
-            "macd": {
-                "fast_period": "fast",
-                "slow_period": "slow",
-                "signal_period": "signal",
-            },
-            "kdj": {
-                "n": "window",
-                "period": "window",
-            },
+            "rank_normalize": {"values": "column", "value": "column"},
+            "pct_change": {"values": "column", "value": "column"},
+            "rolling_mean": {"n": "window", "period": "window", "periods": "window"},
+            "rolling_std": {"n": "window", "period": "window"},
+            "rsi": {"n": "window", "period": "window"},
+            "macd": {"fast_period": "fast", "slow_period": "slow", "signal_period": "signal"},
+            "kdj": {"n": "window", "period": "window"},
         }
         
         # 检查是否有字段缺失错误

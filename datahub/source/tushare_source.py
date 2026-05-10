@@ -59,6 +59,29 @@ class TushareSource(DataSource):
                     )
                     return None
         return None
+    
+    def fetch(
+        self,
+        api_name: str,
+        params: dict[str, Any],
+        fields: list[str] | None = None,
+    ) -> "pl.DataFrame | None":
+        """Fetch data from Tushare API.
+        
+        Args:
+            api_name: API 名称
+            params: 参数字典
+            fields: 需要返回的字段列表（可选）
+            
+        Returns:
+            Polars DataFrame 或 None
+        """
+        # 如果指定了 fields，添加到参数中
+        if fields:
+            params['fields'] = ','.join(fields)
+        
+        # 调用 call 方法
+        return self.call(api_name, params)
 
     def ping(self) -> bool:
         result = self.call("stock_basic", {"exchange": "", "list_status": "L", "limit": "1"})

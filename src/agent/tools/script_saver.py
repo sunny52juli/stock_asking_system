@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 
+from infrastructure.config.settings import get_settings
 from infrastructure.errors.exceptions import ScreeningError, ToolExecutionError
 from src.agent.generators.screening_script_generator import ScreeningScriptGenerator
 from .strategy_resolver import find_strategy_name_from_config
@@ -39,7 +40,11 @@ def create_save_screening_script(scripts_dir: str):
             strategy_name = find_strategy_name_from_config(query, screening_logic)
             
             # 从配置中读取 strategy_num（如果存在）
-            strategy_num = screening_logic.get("strategy_num", 1)
+            settings = get_settings()
+            if strategy_name in settings.strategies:
+                strategy_num = settings.strategies[strategy_name].strategy_num
+            else:
+                strategy_num = screening_logic.get("strategy_num", 1)
             
             os.makedirs(scripts_dir, exist_ok=True)
             generator = ScreeningScriptGenerator(output_dir=scripts_dir)

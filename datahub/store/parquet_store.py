@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 from pathlib import Path
 import polars as pl
 
@@ -54,7 +54,7 @@ class ParquetStore(Repository):
 
     def save(self, dataset: Dataset, data: "pl.DataFrame", partition_key: str) -> bool:
         if data is None or data.is_empty():
-            logger.warning("⚠️ Empty data, skip save: %s/%s", dataset.value, partition_key)
+            logger.warning("[WARN] Empty data, skip save: %s/%s", dataset.value, partition_key)
             return False
 
         meta, _ = DatasetRegistry.get(dataset)
@@ -64,10 +64,10 @@ class ParquetStore(Repository):
         try:
             directory.mkdir(parents=True, exist_ok=True)
             if not directory.exists():
-                logger.error("❌ Cannot create cache directory: %s", directory)
+                logger.error("[ERROR] Cannot create cache directory: %s", directory)
                 return False
         except Exception as e:
-            logger.error("❌ Cannot create cache directory: %s, error=%s", directory, e)
+            logger.error("[ERROR] Cannot create cache directory: %s, error=%s", directory, e)
             return False
         
         path = directory / f"{partition_key}.parquet"
@@ -78,10 +78,10 @@ class ParquetStore(Repository):
 
         try:
             data.write_parquet(path, compression="snappy")
-            logger.info("✅ Saved: %s (%d rows, %d cols)", path, data.height, data.width)
+            logger.info("[OK] Saved: %s (%d rows, %d cols)", path, data.height, data.width)
             return True
         except Exception as e:
-            logger.error("❌ Save failed: %s, error=%s (type=%s, rows=%d)", path, e, type(e).__name__, data.height)
+            logger.error("[ERROR] Save failed: %s, error=%s (type=%s, rows=%d)", path, e, type(e).__name__, data.height)
             # 尝试删除可能损坏的文件
             if path.exists():
                 try:
@@ -114,11 +114,11 @@ class ParquetStore(Repository):
         path = self.root / meta.storage_path / f"{partition_key}.parquet"
 
         if not path.exists():
-            logger.debug("❌ Cache MISS: %s (file not found)", path.name)
+            logger.debug("[ERROR] Cache MISS: %s (file not found)", path.name)
             raise DataNotFoundError(f"Not found: {path}")
 
         df = pl.read_parquet(path)
-        logger.debug("✅ Cache HIT: %s (%d rows, %d cols)", path.name, df.height, df.width)
+        logger.debug("[OK] Cache HIT: %s (%d rows, %d cols)", path.name, df.height, df.width)
 
         if query.codes and meta.code_column in df.columns:
             df = df.filter(pl.col(meta.code_column).is_in(query.codes))

@@ -185,10 +185,15 @@ class TestSyncRepository:
         mock_store = Mock()
         mock_store.load.side_effect = DataNotFoundError("Not found")
         
-        # Mock source 返回数据 (polars)
+        # Mock source 返回数据 (polars) - 需要包含 trade_date 字段
         mock_source = Mock()
-        mock_df = pl.DataFrame({'ts_code': ['000001.SZ'], 'close': [10.0]})
-        mock_source.call.return_value = mock_df
+        mock_df = pl.DataFrame({
+            'ts_code': ['000001.SZ'], 
+            'trade_date': ['20240301'],
+            'close': [10.0]
+        })
+        # 修复：mock fetch 方法而不是 call
+        mock_source.fetch.return_value = mock_df
         
         # Mock registry
         meta = DatasetMeta(
@@ -212,7 +217,7 @@ class TestSyncRepository:
         
         assert not result.is_empty()
         mock_store.load.assert_called_once()
-        mock_source.call.assert_called()  # 应该调用数据源
+        mock_source.fetch.assert_called()  # 应该调用数据源的 fetch 方法
     
     def test_check_data_quality(self):
         """测试数据质量检查。"""
@@ -221,17 +226,20 @@ class TestSyncRepository:
         mock_source = Mock()
         repo = SyncRepository(mock_store, mock_source)
         
+        # 使用 CacheManager 的方法进行测试
+        cache_manager = repo.cache_manager
+        
         # 高质量数据 (polars)
         good_data = pl.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
-        assert repo._check_data_quality(good_data) == 0.0
+        assert cache_manager._calculate_nan_ratio(good_data) == 0.0
         
         # 低质量数据（50% null）
         bad_data = pl.DataFrame({'a': [1, None], 'b': [None, 2]})
-        assert repo._check_data_quality(bad_data) == 0.5
+        assert cache_manager._calculate_nan_ratio(bad_data) == 0.5
         
         # 空数据
         empty_data = pl.DataFrame()
-        assert repo._check_data_quality(empty_data) == 1.0
+        assert cache_manager._calculate_nan_ratio(empty_data) == 0.0
 
 
 class TestParquetStore:

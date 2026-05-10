@@ -59,7 +59,8 @@ def _get_stock_pool_from_datahub(
             )
             basic = basic.filter(pl.col("list_days") >= min_list_days)
         if exclude_st and "name" in basic.columns:
-            basic = basic.filter(~pl.col("name").cast(pl.String).str.contains("ST"))
+            # 修复：使用 ^ 锚定开头，避免误匹配名称中包含 "ST" 的正常股票
+            basic = basic.filter(~pl.col("name").cast(pl.String).str.contains(r"^\*?ST"))
     return basic["ts_code"].cast(pl.String).unique().to_list()
 
 
@@ -101,9 +102,9 @@ class StockDataLoader(BaseDataLoader):
             observation_days: Number of trading days for lookback period. If None, uses config default
         """
         if self._data is not None and not force_reload:
-            print("📊 使用缓存的市场数据")
+            print("[DATA] 使用缓存的市场数据")
             return self._data
-        print("📊 正在加载市场数据...")
+        print("[DATA] 正在加载市场数据...")
         
         # 如果 trade_date_for_pool 未提供，尝试获取最新可用日期
         if trade_date_for_pool is None:
@@ -126,10 +127,10 @@ class StockDataLoader(BaseDataLoader):
         )
         if not self._stock_pool:
             raise ValueError("无法获取股票池数据，请检查本地数据是否存在")
-        print(f"📊 股票池共 {len(self._stock_pool)} 只股票")
+        print(f"[DATA] 股票池共 {len(self._stock_pool)} 只股票")
         
         # 加载价格数据
-        print(f"📊 加载数据：{start_date} ~ {end_date}")
+        print(f"[DATA] 加载数据：{start_date} ~ {end_date}")
         df = self._stock.price(start_date=start_date, end_date=end_date)
         
         if df.is_empty():
@@ -143,7 +144,7 @@ class StockDataLoader(BaseDataLoader):
             df = df.sort(["trade_date", "ts_code"])
         
         self._data = df
-        print(f"✅ 已加载市场数据：{df.height} 条记录")
+        print(f"[OK] 已加载市场数据：{df.height} 条记录")
         return df
 
 

@@ -89,7 +89,7 @@ class ComponentInitializer:
         if self.rules:
             rules_section = RulesLoader.build_rules_section(self.rules)
             self.system_prompt = base_prompt + rules_section
-            logger.info(f"✅ 已加载 {len(self.rules)} 条规则到 system prompt")
+            logger.info(f"[OK] 已加载 {len(self.rules)} 条规则到 system prompt")
         else:
             self.system_prompt = base_prompt
     
@@ -97,7 +97,7 @@ class ComponentInitializer:
         """构建LLM."""
         api_config = self.settings.llm.to_dict()
         self.llm = build_llm_from_api_config(api_config)
-        logger.info(f"✅ LLM构建完成: {api_config.get('model')}")
+        logger.info(f"[OK] LLM构建完成: {api_config.get('model')}")
     
     def _load_mcp_tools(self):
         """加载MCP工具."""
@@ -118,10 +118,10 @@ class ComponentInitializer:
             
             self.mcp_tools = asyncio.run(_load())
             tool_names = [getattr(t, 'name', f'tool_{i}') for i, t in enumerate(self.mcp_tools)]
-            logger.info(f"✅ 成功加载 {len(self.mcp_tools)} 个 MCP 工具")
+            logger.info(f"[OK] 成功加载 {len(self.mcp_tools)} 个 MCP 工具")
             logger.info(f"📦 工具列表：{', '.join(tool_names[:10])}{'...' if len(tool_names) > 10 else ''}")
         except Exception as e:
-            logger.warning(f"⚠️ MCP 工具加载失败：{e}")
+            logger.warning(f"[WARN] MCP 工具加载失败：{e}")
             self.mcp_tools = []
     
     def create_bridge_tools(self, data_fn, stock_codes: list[str] | None = None):
@@ -135,16 +135,16 @@ class ComponentInitializer:
         
         # 记录 stock_codes 状态（debug 级别，避免噪音）
         if stock_codes:
-            logger.debug(f"🔧 Bridge工具使用 {len(stock_codes)} 只股票的过滤池")
+            logger.debug(f"[CONFIG] Bridge工具使用 {len(stock_codes)} 只股票的过滤池")
         else:
-            logger.debug("🔧 Bridge工具未设置股票池，将使用全市场数据")
+            logger.debug("[CONFIG] Bridge工具未设置股票池，将使用全市场数据")
         
         self.bridge_tools = create_bridge_tools(
             data_fn=data_fn,
             scripts_dir=scripts_dir,
             stock_codes=stock_codes,
         )
-        logger.info("✅ Bridge工具创建完成")
+        logger.info("[OK] Bridge工具创建完成")
     
     def create_tool_provider(self):
         """创建工具提供者."""
@@ -152,7 +152,7 @@ class ComponentInitializer:
             mcp_tools=self.mcp_tools,
             bridge_tools=self.bridge_tools,
         )
-        logger.info(f"✅ 工具提供者创建完成: {len(self.mcp_tools)} MCP + {len(self.bridge_tools)} Bridge")
+        logger.info(f"[OK] 工具提供者创建完成: {len(self.mcp_tools)} MCP + {len(self.bridge_tools)} Bridge")
     
     def _init_skills_and_memory(self):
         """初始化技能和记忆."""
@@ -160,23 +160,23 @@ class ComponentInitializer:
         self.skill_registry = SkillRegistry()
         # 使用 .stock_asking/skills 作为 Skills 目录
         skills_dir = self.project_root / ".stock_asking" / "skills"
-        logger.info(f"🔍 Skills目录路径: {skills_dir}")
-        logger.info(f"🔍 路径是否存在: {skills_dir.exists()}")
+        logger.info(f"[SEARCH] Skills目录路径: {skills_dir}")
+        logger.info(f"[SEARCH] 路径是否存在: {skills_dir.exists()}")
         if skills_dir.exists():
             skill_files = list(skills_dir.rglob("SKILL.md"))
-            logger.info(f"🔍 找到 {len(skill_files)} 个 SKILL.md 文件")
+            logger.info(f"[SEARCH] 找到 {len(skill_files)} 个 SKILL.md 文件")
             for f in skill_files:
                 logger.info(f"   - {f.relative_to(skills_dir.parent)}")
             self.skill_registry.load_local_skills(str(skills_dir))
-            logger.info(f"✅ Skills 加载完成，共 {len(self.skill_registry.all_skills)} 个: {list(self.skill_registry.all_skills.keys())}")
+            logger.info(f"[OK] Skills 加载完成，共 {len(self.skill_registry.all_skills)} 个: {list(self.skill_registry.all_skills.keys())}")
         else:
-            logger.warning(f"⚠️ Skills 目录不存在: {skills_dir}")
+            logger.warning(f"[WARN] Skills 目录不存在: {skills_dir}")
             logger.warning(f"   当前工作目录: {Path.cwd()}")
             logger.warning(f"   project_root: {self.project_root}")
         
         logger.info("初始化 Long-term Memory...")
         self.long_term_memory = LongTermMemory(self.project_root / ".stock_asking" / "memory.db")
-        logger.info("✅ Skills 和 Memory 初始化完成")
+        logger.info("[OK] Skills 和 Memory 初始化完成")
     
     def create_agent(self, llm, tool_provider, skill_registry, long_term_memory, query: str | None = None):
         """创建 Agent.
@@ -192,7 +192,7 @@ class ComponentInitializer:
             (agent, initial_files) 元组
         """
         
-        logger.info(f"创建 Agent (deep_thinking={self.settings.harness.deep_thinking}, max_iterations={self.settings.harness.max_iterations})...")
+        logger.info(f"创建 Agent (deep_thinking={self.settings.harness.deep_thinking})...")
         
         # 使用 .stock_asking/skills 作为 Skills 目录
         skills_dir = self.project_root / ".stock_asking" / "skills"
@@ -204,10 +204,9 @@ class ComponentInitializer:
             long_term_memory=long_term_memory,
             skills_dir=skills_dir,
             deep_thinking=self.settings.harness.deep_thinking,
-            max_iterations=self.settings.harness.max_iterations,
             query=query,
             rules_dict=self.rules,  # 注入 Rules 到 System Prompt
         )
-        logger.info("✅ Agent 创建完成")
+        logger.info("[OK] Agent 创建完成")
         
         return agent, initial_files

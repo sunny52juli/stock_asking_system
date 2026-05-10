@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import inspect
-import pandas as pd
+import polars as pl
 
 
 from mcp_server.executors import TOOL_FUNCTIONS
 from mcp_server.executors import execute_tool as mcp_execute_tool
 def execute_tool_impl(
     tool_name: str,
-    data: pd.DataFrame,
+    data: pl.DataFrame,
     params: dict,
-    index_data: pd.DataFrame | None = None,
+    index_data: pl.DataFrame | None = None,
 ):
     """执行工具的包装函数 - 通过 MCP 工具执行器调用.
     

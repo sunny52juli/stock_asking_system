@@ -59,7 +59,7 @@ infrastructure/
 **配置层级**:
 
 1. **默认值**:代码中定义的默认值
-2. **YAML 文件**:`setting/` 目录下的配置文件（screening.yaml、stock_pool.yaml、backtest.yaml）
+2. **YAML 文件**:`setting/` 目录下的配置文件（screening_interactive.yaml、stock_pool.yaml、backtest.yaml）
 3. **环境变量**:通过 `.env` 文件设置
 4. **命令行参数**:最高优先级
 
@@ -142,7 +142,7 @@ logger.info("处理股票数据", extra={
 })
 ```
 
-**日志配置**(`setting/screening.yaml`):
+**日志配置**(`setting/screening_interactive.yaml`):
 
 ```yaml
 logging:
@@ -395,7 +395,7 @@ class Settings(BaseModel):
     my: MyConfig = Field(default_factory=MyConfig)
 ```
 
-2. 在相应的 YAML 配置文件中添加配置（如 `screening.yaml`）:
+2. 在相应的 YAML 配置文件中添加配置（如 `screening_interactive.yaml`）:
 
 ```yaml
 my:

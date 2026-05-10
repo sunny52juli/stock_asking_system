@@ -11,12 +11,23 @@ def _extract_screening_logic_from_result(result: dict) -> str | None:
     try:
         messages = result.get("messages", [])
         for message in reversed(messages):
-            if hasattr(message, "tool_calls") and message.tool_calls:
-                for tool_call in message.tool_calls:
-                    if tool_call.get("name") == "run_screening":
-                        args = tool_call.get("args", {})
-                        if "screening_logic_json" in args:
-                            return args["screening_logic_json"]
+            # ✅ 兼容两种格式：对象属性和字典
+            tool_calls = None
+            if hasattr(message, "tool_calls"):
+                tool_calls = message.tool_calls
+            elif isinstance(message, dict):
+                tool_calls = message.get("tool_calls", [])
+            
+            if not tool_calls:
+                continue
+            
+            for tool_call in tool_calls:
+                # ✅ 支持多种工具名称
+                tool_name = tool_call.get("name", "") if isinstance(tool_call, dict) else getattr(tool_call, "name", "")
+                if tool_name in ["run_screening", "cached_run_screening"]:
+                    args = tool_call.get("args", {}) if isinstance(tool_call, dict) else getattr(tool_call, "args", {})
+                    if "screening_logic_json" in args:
+                        return args["screening_logic_json"]
         return None
     except Exception as e:
         logger.debug("提取 screening_logic 失败: %s", e)
@@ -26,6 +37,13 @@ def _extract_screening_logic_from_result(result: dict) -> str | None:
 def _is_screening_successful(result: dict) -> bool:
     """检查 Agent 结果是否表示筛选成功."""
     try:
+        # 优先检查是否有 candidates 数据
+        candidates = result.get("candidates", [])
+        if candidates and len(candidates) > 0:
+            logger.debug(f"✅ 检测到 {len(candidates)} 只候选股票，筛选成功")
+            return True
+        
+        # 其次检查消息内容
         messages = result.get("messages", [])
         if not messages:
             return False
@@ -39,8 +57,14 @@ def _is_screening_successful(result: dict) -> bool:
         elif isinstance(final_message, str):
             content = final_message
 
-        success_keywords = ["成功筛选", "成功匹配", "筛选成功", "找到", "候选股票", "筛选完成"]
-        return any(keyword in content for keyword in success_keywords)
+        success_keywords = ["成功筛选", "成功匹配", "筛选成功", "找到", "候选股票", "筛选完成", "共筛选出"]
+        has_keyword = any(keyword in content for keyword in success_keywords)
+        
+        if has_keyword:
+            logger.debug("✅ 检测到成功关键词")
+        
+        return has_keyword
+
     except Exception as e:
         logger.debug("检查筛选成功状态失败：%s", e)
         return False

@@ -94,7 +94,6 @@ class BatchCalculator:
         
         tools = screening_logic.get("tools", [])
         expression = screening_logic.get("expression", "")
-        confidence_formula = screening_logic.get("confidence_formula", "1.0")
         rationale = screening_logic.get("rationale", "")
         
         main_tools = tools
@@ -102,7 +101,10 @@ class BatchCalculator:
         
         expression_vars = NamespaceBuilder.extract_variables(expression) if expression else set()
         
-        self._print_logic_summary(expression, confidence_formula, main_tools)
+        # 从 tools 中提取所有变量名（用于后续 metrics 提取）
+        tool_vars = {tool.get("var") for tool in tools if tool.get("var")}
+        
+        self._print_logic_summary(expression, main_tools)
         logger.info(f"\n   ⚡ 向量化批量筛选模式 ({len(stock_codes)} 只股票)")
         
         # 过滤有效股票
@@ -131,8 +133,8 @@ class BatchCalculator:
         
         # 构建候选结果
         candidates = self._build_candidates(
-            matched_stocks, confidence_formula, latest_namespace,
-            expression_vars, valid_data, valid_stocks, rationale,
+            matched_stocks, latest_namespace,
+            expression_vars, tool_vars, valid_data, valid_stocks, rationale,
         )
         
         t_elapsed = _time.time() - t_start
@@ -236,9 +238,9 @@ class BatchCalculator:
     def _build_candidates(
         self,
         matched_stocks: list[str],
-        confidence_formula: str,
         latest_namespace: dict,
         expression_vars: set[str],
+        tool_vars: set[str],  # 新增：从 tools 中提取的变量名
         valid_data: pl.DataFrame,
         valid_stocks: list[str],
         rationale: str,
@@ -247,51 +249,75 @@ class BatchCalculator:
         if not matched_stocks:
             return []
         
-        # 计算置信度
-        confidence_values = ExpressionEvaluator.calculate_confidence(
-            confidence_formula, latest_namespace, valid_stocks
-        )
-        
         # 批量获取股票名称和行业
         name_map = self._get_stock_names_batch(valid_data, matched_stocks)
         industry_map = self._get_stock_industries_batch(valid_data, matched_stocks)
         
-        # 提取指标数据
+        # 提取指标数据（包括所有工具计算的变量）
         metrics_dict: dict[str, list[float]] = {}
+        
+        # 调试：打印 latest_namespace 中的键
+        logger.debug(f"   🔍 latest_namespace keys: {list(latest_namespace.keys())}")
+        logger.debug(f"   🔍 tool_vars: {tool_vars}")
+        logger.debug(f"   🔍 expression_vars: {expression_vars}")
+        
+        # 1. 先提取 expression 中的变量
         for var in expression_vars:
             val = latest_namespace.get(var)
             if isinstance(val, pl.Series):
-                # 只取 matched_stocks 对应的值
                 metrics_dict[var] = val.to_list()
             elif isinstance(val, (int, float)):
                 metrics_dict[var] = [float(val)] * len(matched_stocks)
         
-        # 构建候选列表
+        # 2. 再提取所有在 tools 中定义的变量（动态获取，无需硬编码）
+        for var in tool_vars:
+            # 跳过已处理的 expression_vars
+            if var in expression_vars:
+                continue
+            
+            val = latest_namespace.get(var)
+            if val is None:
+                logger.debug(f"   ⚠️ 变量 {var} 在 latest_namespace 中不存在")
+                continue
+            if isinstance(val, pl.Series):
+                metrics_dict[var] = val.to_list()
+            elif isinstance(val, (int, float)):
+                metrics_dict[var] = [float(val)] * len(matched_stocks)
+        
+        # 向量化构建候选列表
+        n_stocks = len(matched_stocks)
+        
+        # 构建基础 DataFrame
+        candidates_df = pl.DataFrame({
+            "ts_code": matched_stocks,
+            "name": [name_map.get(code, code) for code in matched_stocks],
+            "industry": [industry_map.get(code, "N/A") for code in matched_stocks],
+            "reason": [rationale] * n_stocks,
+        })
+        
+        # 添加指标列（向量化）
+        for var, values in metrics_dict.items():
+            if len(values) >= n_stocks:
+                candidates_df = candidates_df.with_columns(
+                    pl.Series(var, values[:n_stocks])
+                )
+        
+        # 转换为字典列表格式
         candidates = []
-        for idx, ts_code in enumerate(matched_stocks):
-            conf = confidence_values[idx] if idx < len(confidence_values) else 0.5
-            
-            # 使用 math.isnan 检查 NaN
-            if isinstance(conf, float) and math.isnan(conf):
-                conf = 0.5
-            
-            # 提取该股票的指标
-            metrics = {}
-            for var, values in metrics_dict.items():
-                if idx < len(values):
-                    val = values[idx]
-                    # 只添加非 NaN 值
-                    if isinstance(val, float) and not math.isnan(val):
-                        metrics[var] = float(val)
-                    elif not isinstance(val, float):
-                        metrics[var] = float(val)
+        candidates_dicts = candidates_df.to_dicts()
+        
+        for row in candidates_dicts:
+            # 提取 metrics（移除基础字段）
+            metrics = {
+                k: v for k, v in row.items() 
+                if k not in ["ts_code", "name", "industry", "reason"] and v is not None
+            }
             
             candidates.append({
-                "ts_code": ts_code,
-                "name": name_map.get(ts_code, ts_code),
-                "industry": industry_map.get(ts_code, "N/A"),
-                "confidence": conf,
-                "reason": rationale,
+                "ts_code": row["ts_code"],
+                "name": row["name"],
+                "industry": row["industry"],
+                "reason": row["reason"],
                 "metrics": metrics,
             })
         
@@ -423,13 +449,10 @@ class BatchCalculator:
             return {code: "N/A" for code in stock_codes}
 
     @staticmethod
-    def _print_logic_summary(
-        expression: str, confidence_formula: str, main_tools: list[dict]
-    ):
+    def _print_logic_summary(expression: str, main_tools: list[dict]):
         """打印筛选逻辑摘要."""
         logger.info("\n   📋 筛选逻辑:")
         logger.info(f"      表达式：{expression}")
-        logger.info(f"      置信度：{confidence_formula}")
         if main_tools:
             logger.info("      工具步骤:")
             for t in main_tools:

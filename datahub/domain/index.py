@@ -97,12 +97,12 @@ class Index:
         if not index_codes:
             return pl.DataFrame()
         
-        # 逐个加载每个指数的数据，然后合并
-        logger.info(f"🔍 开始加载 {len(index_codes)} 个指数...")
-        dfs = []
-        failed_indices = []
+        from concurrent.futures import ThreadPoolExecutor
         
-        for idx_code in index_codes:
+        logger.info(f"[SEARCH] 批量加载 {len(index_codes)} 个指数数据...")
+        
+        # 定义单个指数加载函数
+        def load_single_index(idx_code: str) -> tuple[str, pl.DataFrame | None]:
             try:
                 df = self.level(
                     index_code=idx_code,
@@ -110,43 +110,50 @@ class Index:
                     end_date=end_date,
                     freq=freq,
                 )
-                if not df.is_empty():
-                    # 确保有 index_code 列
-                    logger.debug(f"   {idx_code} 原始列: {df.columns}")
-                    
-                    # 关键修复：在合并前就添加 index_code，避免被覆盖
-                    if 'ts_code' in df.columns:
-                        # 如果已经有 ts_code，重命名为 index_code
-                        df = df.rename({'ts_code': 'index_code'})
-                        logger.debug(f"   {idx_code} 重命名 ts_code -> index_code")
-                    else:
-                        # 如果没有 ts_code，手动添加 index_code
-                        df = df.with_columns(pl.lit(idx_code).alias('index_code'))
-                        logger.debug(f"   {idx_code} 手动添加 index_code={idx_code}")
-                    
-                    # 验证 index_code 是否正确
-                    unique_codes = df['index_code'].unique().to_list()
-                    logger.debug(f"   {idx_code} 验证: index_code 唯一值={unique_codes}")
-                    
-                    dfs.append(df)
-                    logger.debug(f"   ✅ {idx_code}: {len(df)} 条记录, index_code={unique_codes[0] if unique_codes else 'N/A'}")
+                if df.is_empty():
+                    return (idx_code, None)
+                
+                # 添加 index_code 列
+                if 'ts_code' in df.columns:
+                    df = df.rename({'ts_code': 'index_code'})
                 else:
-                    logger.warning(f"   ⚠️ {idx_code}: 空数据（可能未缓存）")
-                    failed_indices.append(idx_code)
+                    df = df.with_columns(pl.lit(idx_code).alias('index_code'))
+                
+                return (idx_code, df)
             except Exception as e:
-                logger.error(f"   ❌ {idx_code}: {e}")
+                logger.error(f"   [ERROR] {idx_code}: {e}")
+                return (idx_code, None)
+        
+        # 使用 map 并行加载
+        max_workers = len(index_codes)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(load_single_index, index_codes))
+        
+        # 分离成功和失败的结果
+        dfs = []
+        failed_indices = []
+        for idx_code, df in results:
+            if df is not None:
+                # 统一列顺序，确保所有 DataFrame 有相同的列
+                standard_columns = ['index_code', 'trade_date', 'open', 'high', 'low', 'close', 'vol', 'amount']
+                available_cols = [col for col in standard_columns if col in df.columns]
+                if available_cols:
+                    dfs.append(df.select(available_cols))
+                else:
+                    failed_indices.append(idx_code)
+            else:
                 failed_indices.append(idx_code)
         
         if not dfs:
-            logger.warning("⚠️ 所有指数数据加载失败")
+            logger.warning("[WARN] 所有指数数据加载失败")
             return pl.DataFrame()
         
         # 合并所有指数的数据
         combined = pl.concat(dfs)
-        logger.info(f"✅ 批量加载完成: {len(index_codes) - len(failed_indices)}/{len(index_codes)} 个指数, 共 {len(combined)} 条记录")
+        logger.info(f"[OK] 批量加载完成: {len(index_codes) - len(failed_indices)}/{len(index_codes)} 个指数, 共 {len(combined)} 条记录")
         
         if failed_indices:
-            logger.warning(f"⚠️ 以下指数加载失败: {', '.join(failed_indices)}")
+            logger.warning(f"[WARN] 以下指数加载失败: {', '.join(failed_indices)}")
         
         return combined
 
@@ -266,7 +273,12 @@ class Index:
                     left_on=code_col,
                     right_on="ts_code",
                     how="left",
+                    suffix="_dup"
                 )
+                # 移除带 _dup 后缀的列
+                dup_cols = [col for col in merged.columns if col.endswith("_dup")]
+                if dup_cols:
+                    merged = merged.drop(dup_cols)
                 if weight_col:
                     return (
                         merged.group_by(industry_col)

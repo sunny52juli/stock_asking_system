@@ -1,4 +1,4 @@
-"""质量评估协议与选股评估器实现.
+﻿"""质量评估协议与选股评估器实现.
 
 定义通用的 QualityEvaluator 协议，并提供选股领域的 ScreeningQualityEvaluator 实现。
 支持 Protocol 设计，便于领域扩展。
@@ -113,11 +113,11 @@ class ScreeningQualityEvaluator:
         suggestions = []
         
         # 提取具体的错误信息和建议
-        if "❌" in error_message:
+        if "[ERROR]" in error_message:
             # 解析智能建议
             lines = error_message.split("\n")
             for line in lines:
-                if "❌" in line or "✅" in line or "💡" in line:
+                if "[ERROR]" in line or "[OK]" in line or "💡" in line:
                     suggestions.append(line.strip())
         else:
             # 通用建议
@@ -129,7 +129,7 @@ class ScreeningQualityEvaluator:
                 f"\n原始错误：{error_message[:200]}"
             )
         
-        logger.warning(f"⚠️ 检测到参数验证错误，触发自动优化")
+        logger.warning(f"[WARN] 检测到参数验证错误，触发自动优化")
         
         return {
             "quality_score": 0.0,

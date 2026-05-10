@@ -1,4 +1,4 @@
-"""智能任务分解器 - 将复杂筛选需求分解为多步骤子任务."""
+﻿"""智能任务分解器 - 将复杂筛选需求分解为多步骤子任务."""
 
 from __future__ import annotations
 
@@ -101,14 +101,14 @@ class TaskPlanner:
         Returns:
             任务计划
         """
-        logger.info(f"🔍 开始分解查询：{query[:50]}...")
+        logger.info(f"[SEARCH] 开始分解查询：{query[:50]}...")
         
         # 1. 识别任务类型
         detected_tasks = self._detect_tasks(query)
         
         if not detected_tasks:
             # 如果没有检测到特定任务，默认为筛选任务
-            logger.info("ℹ️  未检测到特定任务类型，使用默认筛选任务")
+            logger.info("[INFO]  未检测到特定任务类型，使用默认筛选任务")
             detected_tasks = ["screening"]
         
         # 2. 创建子任务
@@ -122,7 +122,7 @@ class TaskPlanner:
         
         plan = TaskPlan(tasks=tasks, execution_order=execution_order)
         
-        logger.info(f"✅ 任务分解完成：{len(tasks)} 个子任务")
+        logger.info(f"[OK] 任务分解完成：{len(tasks)} 个子任务")
         logger.info(f"   执行顺序：{execution_order}")
         
         return plan
@@ -225,7 +225,7 @@ class TaskPlanner:
         
         # 检查是否有环
         if len(order) != len(tasks):
-            logger.warning("⚠️  检测到循环依赖，使用默认顺序")
+            logger.warning("[WARN]  检测到循环依赖，使用默认顺序")
             return [task.id for task in tasks]
         
         return order

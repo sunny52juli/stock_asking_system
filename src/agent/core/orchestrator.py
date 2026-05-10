@@ -1,61 +1,48 @@
-"""查询编排器 - 协调Agent初始化和查询执行（精简版）."""
+"""查询编排器 - 协调Agent初始化和查询执行."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from infrastructure.logging.logger import LoggerMixin, get_logger
+
+from infrastructure.logging.logger import get_logger
 from infrastructure.config.settings import get_settings
 from utils.agent.result_checker import _check_api_key
-from src.agent.quality.quality_evaluator import ScreeningQualityEvaluator
-from src.agent.harness.hooks import HookExecutor
-from infrastructure.telemetry import get_telemetry
-from infrastructure.session import get_session_manager
-from infrastructure.retry.manager import get_retry_manager
 
 # 导入新的模块化组件
-from src.agent.initialization.component_initializer import ComponentInitializer
+from src.agent.core.component_manager import ComponentManager
+from src.agent.core.agent_factory import AgentFactory
 from src.agent.execution.query_executor import QueryExecutor
+from src.agent.execution.state_manager import SessionStateManager
 
-from infrastructure.errors.exceptions import ToolExecutionError
-from src.agent.models.screening_logic import ToolStep
 logger = get_logger(__name__)
 
 
-class ScreenerOrchestrator(LoggerMixin):
-    """筛选器编排器 - 负责高层协调和组件管理."""
+class ScreenerOrchestrator:
+    """筛选器编排器 - 协调组件管理和查询执行."""
     
-    def __init__(self, settings=None):
-        self.settings = settings or get_settings()
+    def __init__(self, settings=None, state_manager: SessionStateManager | None = None):
+        """初始化.
         
-        # 使用项目根目录（相对于此文件的位置）
-        # orchestrator.py -> core/ -> agent/ -> src/ -> 项目根目录
+        Args:
+            settings: 全局配置
+            state_manager: 会话状态管理器
+        """
+        self.settings = settings or get_settings()
+        self.state_manager = state_manager
+        
+        # 使用项目根目录
         project_root = Path(__file__).resolve().parent.parent.parent.parent
         
-        # 初始化核心组件管理器
-        self.component_initializer = ComponentInitializer(self.settings, project_root)
+        # 初始化组件管理器
+        self.component_manager = ComponentManager(self.settings, project_root)
         
-        # 质量评估器
-        self.quality_evaluator = ScreeningQualityEvaluator(project_root / "app" / "setting" / "rules")
+        # Agent工厂
+        self.agent_factory = AgentFactory(self.settings)
         
-        # Harness组件
-        self.config_dir = project_root / ".stock_asking"
-        logger.info(f"📁 Hook config directory: {self.config_dir}")
-        logger.info(f"📁 Hook scripts directory: {self.config_dir / 'hooks'}")
-        self.hooks = HookExecutor(self.settings.harness.hooks, self.config_dir)
-        
-        # 可观测性和会话管理
-        self.telemetry = get_telemetry(enabled=True)
-        self.session_manager = get_session_manager()
-        
-        # 重试管理器
-        self.retry_manager = get_retry_manager()
-        
-        # Agent 相关组件（延迟初始化）
-        self.agent = None
-        self.initial_files = None
+        # 数据相关（延迟加载）
         self.data = None
-        self.index_data = None  # 指数数据
+        self.index_data = None
         self.stock_codes = []
         
         # 查询执行器（在数据加载后创建）
@@ -71,49 +58,38 @@ class ScreenerOrchestrator(LoggerMixin):
             return False
         
         try:
-            # 0. 设置全局观察期约束（用于 ToolStep 参数验证）
-            ToolStep.set_observation_days(self.settings.observation_days)
-            logger.info(f"🔧 设置工具窗口参数上限：window <= {self.settings.observation_days} (observation_days)")
+            # 0. 设置全局观察期约束
+            self.component_manager.set_observation_days(self.settings.observation_days)
             
-            # 1. 初始化所有组件（不加载数据）
-            logger.info("\n" + "=" * 60)
-            logger.info("步骤 1/2: 初始化Agent组件")
-            logger.info("=" * 60)
-            self.component_initializer.initialize_all()
+            # 1. 初始化所有组件
+            self.component_manager.initialize_all()
             
-            # 2. 创建 Bridge 工具和 Tool Provider（数据将在 StockPoolService 中加载）
-            logger.info("\n" + "=" * 60)
-            logger.info("步骤 2/2: 创建工具层（占位符）")
-            logger.info("=" * 60)
-            
-            # 暂时使用空数据，实际数据将在 StockPoolService.apply_filter() 中加载
+            # 2. 创建Bridge工具和Tool Provider
             def get_data():
-                data_tuple = (self.data, self.index_data)
-                return data_tuple
+                return (self.data, self.index_data)
             
-            self.component_initializer.create_bridge_tools(
+            self.component_manager.create_bridge_tools(
                 data_fn=get_data,
                 stock_codes=self.stock_codes
             )
-            self.component_initializer.create_tool_provider()
             
             # 3. 创建查询执行器
             self.query_executor = QueryExecutor(
-                agent=None,  # 延迟创建
-                initial_files=None,  # 将在创建Agent时设置
-                session_manager=self.session_manager,
-                telemetry=self.telemetry,
-                quality_evaluator=self.quality_evaluator,
+                agent=None,
+                initial_files=None,
+                session_manager=self.component_manager.session_manager,
+                telemetry=self.component_manager.telemetry,
+                quality_evaluator=self.component_manager.quality_evaluator,
                 settings=self.settings,
-                hooks=self.hooks,  # 传入 HookExecutor 实例
+                hooks=self.component_manager.hooks,
             )
             
-            # 4. 深度模式下立即创建 Agent
+            # 4. 深度模式下立即创建Agent
             if self.settings.harness.deep_thinking:
                 self._create_agent()
             
             logger.info("\n" + "=" * 60)
-            logger.info("✅ 系统初始化完成（数据将在 StockPoolService 中加载）")
+            logger.info("[OK] 系统初始化完成")
             logger.info("=" * 60)
             return True
             
@@ -121,88 +97,83 @@ class ScreenerOrchestrator(LoggerMixin):
             logger.exception("初始化失败：%s", e)
             return False
     
-    def _create_agent(self, query: str | None = None):
-        """创建或复用 Agent.
+    def _create_agent(self, query: str | None = None, bridge_tools: dict | None = None):
+        """创建或复用Agent.
         
         Args:
-            query: 用户查询（可选），用于智能选择工具
+            query: 用户查询（可选）
+            bridge_tools: 桥接工具字典（交互式模式）
         """
-        # Deep Mode: Agent 已预创建，直接返回
-        if self.settings.harness.deep_thinking and self.agent:
-            logger.debug("Reusing pre-created deep thinking agent")
-            return
-        
-        # Quick Mode: 检查是否可以复用
-        if not self.settings.harness.deep_thinking and self.agent:
-            logger.debug("Reusing quick mode agent")
-            return
-        
-        # 创建新 Agent
-        logger.info(f"Creating new agent (deep_thinking={self.settings.harness.deep_thinking})...")
-        self.agent, self.initial_files = self.component_initializer.create_agent(
-            llm=self.component_initializer.llm,
-            tool_provider=self.component_initializer.tool_provider,
-            skill_registry=self.component_initializer.skill_registry,
-            long_term_memory=self.component_initializer.long_term_memory,
+        self.agent_factory.create_or_reuse(
+            component_initializer=self.component_manager.component_initializer,
             query=query,
+            bridge_tools=bridge_tools,
         )
         
-        # 更新查询执行器的 agent 和 initial_files
-        if self.query_executor:
-            self.query_executor.agent = self.agent
-            self.query_executor.initial_files = self.initial_files
+        # 更新查询执行器
+        self.agent_factory.update_executor(self.query_executor)
     
-    def execute_query(self, query: str, query_id: int) -> dict[str, Any] | None:
+    def execute_query(self, query: str, query_id: int | SessionStateManager = None) -> dict[str, Any] | None:
         """执行单个查询.
         
         Args:
             query: 用户查询
-            query_id: 查询ID
+            query_id: 查询ID或SessionStateManager实例
             
         Returns:
             查询结果或None
         """
         if not self.query_executor:
-            raise RuntimeError("系统未初始化，请先调用 initialize()")
+            logger.error("[ERROR] QueryExecutor未初始化")
+            return None
         
-        # 快速模式下，如果 Agent 尚未创建，则根据查询创建
-        if not self.settings.harness.deep_thinking and not self.agent:
-            self._create_agent(query)
+        # 快速模式下，每次查询前创建Agent
+        if not self.settings.harness.deep_thinking:
+            self._create_agent(query=query)
         
+        # 委托给QueryExecutor执行
         return self.query_executor.execute_query(query, query_id)
     
-    def execute_with_retry(self, tool_name: str, func, **params):
-        """带重试的执行.
+    def execute_query_with_logic(self, logic: dict, state_manager: SessionStateManager) -> dict[str, Any]:
+        """使用指定的筛选逻辑执行查询.
         
         Args:
-            tool_name: 工具名称
-            func: 要执行的函数
-            **params: 函数参数
+            logic: 筛选逻辑字典
+            state_manager: 会话状态管理器
             
         Returns:
-            执行结果
+            查询结果字典
         """
-        max_attempts = 3
-        last_error = None
+        if not self.query_executor:
+            logger.error("[ERROR] QueryExecutor未初始化")
+            return {"success": False, "error": "QueryExecutor未初始化", "candidates": []}
         
-        for attempt in range(max_attempts):
-            try:
-                result = func(**params)
-                self.retry_manager.record_success(tool_name)
-                return result
-            except Exception as e:
-                last_error = e
-                should_retry, adjusted_params = self.retry_manager.check_and_prepare_retry(
-                    e, tool_name, params
-                )
-                if not should_retry:
-                    raise
-                params = adjusted_params
-                logger.warning(f"⚠️ 重试第 {attempt + 1} 次...")
-        
-        raise ToolExecutionError(
-            f"工具 {tool_name} 重试 {max_attempts} 次后仍失败",
-            error_code="TOOL_RETRY_EXHAUSTED",
-            recoverable=False,
-            details={"tool_name": tool_name, "last_error": str(last_error)},
-        ) from last_error
+        try:
+            # 直接使用 StockScreener 执行筛选逻辑
+            from utils.screening.stock_screener import StockScreener
+            
+            screener = StockScreener(
+                data=self.data,
+                stock_codes=self.stock_codes,
+                index_data=self.index_data,
+            )
+            
+            candidates = screener.execute_screening(
+                screening_logic=logic,
+                top_n=10,
+                query=logic.get("name", ""),
+            )
+            
+            return {
+                "success": True,
+                "candidates": candidates,
+                "messages": [],
+            }
+            
+        except Exception as e:
+            logger.error(f"[ERROR] 执行筛选逻辑失败: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "candidates": [],
+            }

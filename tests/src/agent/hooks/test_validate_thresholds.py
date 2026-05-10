@@ -54,7 +54,7 @@ def test_hook_detects_invalid_threshold():
     
     # 应该检测到错误
     assert result.returncode == 2, f"Hook should block invalid threshold. stdout: {result.stdout}"
-    assert "ERRORS" in result.stdout
+    assert "[ERROR]" in result.stdout
     assert "exceeds maximum" in result.stdout
 
 

@@ -11,12 +11,11 @@ import time
 from infrastructure.logging.logger import (
     get_logger,
     configure_logging,
-    LoggerMixin,
     DEFAULT_FORMAT,
     SIMPLE_FORMAT,
     DETAILED_FORMAT,
 )
-
+from utils.logging_utils import LoggerMixin
 
 class TestGetLogger:
     """测试 get_logger 函数."""

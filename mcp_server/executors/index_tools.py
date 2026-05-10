@@ -37,7 +37,7 @@ def beta(
         DataFrame with columns: ts_code, beta
     """
     if index_data is None or index_data.is_empty():
-        raise ValueError("指数数据为空，无法计算 Beta")
+        raise ValueError("指数数据为空，无法计算 Beta。请先加载指数数据或使用不需要指数的指标")
     
     # 统一预处理指数收益率
     index_returns_map = prepare_index_returns(index_data)
@@ -64,7 +64,12 @@ def beta(
     
     # left join 确保所有股票都有结果
     all_stocks = stock_data.select(pl.col('ts_code').unique())
-    result = all_stocks.join(beta_per_stock, on='ts_code', how='left')
+    result = all_stocks.join(beta_per_stock, on='ts_code', how='left', suffix='_dup')
+    
+    # 移除带 _dup 后缀的列
+    dup_cols = [col for col in result.columns if col.endswith('_dup')]
+    if dup_cols:
+        result = result.drop(dup_cols)
     
     return result
 
@@ -91,7 +96,7 @@ def alpha(
         DataFrame with columns: ts_code, alpha
     """
     if index_data is None or index_data.is_empty():
-        raise ValueError("指数数据为空，无法计算 Alpha")
+        raise ValueError("指数数据为空，无法计算 Alpha。请先加载指数数据或使用不需要指数的指标")
     
     # 统一预处理
     index_returns_map = prepare_index_returns(index_data)
@@ -121,7 +126,12 @@ def alpha(
     )
     
     all_stocks = stock_data.select(pl.col('ts_code').unique())
-    result = all_stocks.join(alpha_per_stock, on='ts_code', how='left')
+    result = all_stocks.join(alpha_per_stock, on='ts_code', how='left', suffix='_dup')
+    
+    # 移除带 _dup 后缀的列
+    dup_cols = [col for col in result.columns if col.endswith('_dup')]
+    if dup_cols:
+        result = result.drop(dup_cols)
     
     return result
 
@@ -146,7 +156,7 @@ def outperform_rate(
         DataFrame with columns: ts_code, outperform_ratio (0-1之间)
     """
     if index_data is None or index_data.is_empty():
-        raise ValueError("指数数据为空，无法计算跑赢比例")
+        raise ValueError("指数数据为空，无法计算跑赢比例。请先加载指数数据或使用不需要指数的指标")
     
     # 统一预处理
     index_returns_map = prepare_index_returns(index_data)
@@ -168,7 +178,12 @@ def outperform_rate(
     )
     
     all_stocks = stock_data.select(pl.col('ts_code').unique())
-    result = all_stocks.join(outperform_per_stock, on='ts_code', how='left')
+    result = all_stocks.join(outperform_per_stock, on='ts_code', how='left', suffix='_dup')
+    
+    # 移除带 _dup 后缀的列
+    dup_cols = [col for col in result.columns if col.endswith('_dup')]
+    if dup_cols:
+        result = result.drop(dup_cols)
     
     return result
 
@@ -193,7 +208,7 @@ def correlation_with_index(
         DataFrame with columns: ts_code, correlation
     """
     if index_data is None or index_data.is_empty():
-        raise ValueError("指数数据为空，无法计算相关系数")
+        raise ValueError("指数数据为空，无法计算相关系数。请先加载指数数据或使用不需要指数的指标")
     
     # 统一预处理
     index_returns_map = prepare_index_returns(index_data)
@@ -210,7 +225,12 @@ def correlation_with_index(
     )
     
     all_stocks = stock_data.select(pl.col('ts_code').unique())
-    result = all_stocks.join(corr_per_stock, on='ts_code', how='left')
+    result = all_stocks.join(corr_per_stock, on='ts_code', how='left', suffix='_dup')
+    
+    # 移除带 _dup 后缀的列
+    dup_cols = [col for col in result.columns if col.endswith('_dup')]
+    if dup_cols:
+        result = result.drop(dup_cols)
     
     return result
 
@@ -237,7 +257,7 @@ def tracking_error(
         DataFrame with columns: ts_code, tracking_error
     """
     if index_data is None or index_data.is_empty():
-        raise ValueError("指数数据为空，无法计算跟踪误差")
+        raise ValueError("指数数据为空，无法计算跟踪误差。请先加载指数数据或使用不需要指数的指标")
     
     # 统一预处理
     index_returns_map = prepare_index_returns(index_data)
@@ -265,7 +285,12 @@ def tracking_error(
     )
     
     all_stocks = stock_data.select(pl.col('ts_code').unique())
-    result = all_stocks.join(te_per_stock, on='ts_code', how='left')
+    result = all_stocks.join(te_per_stock, on='ts_code', how='left', suffix='_dup')
+    
+    # 移除带 _dup 后缀的列
+    dup_cols = [col for col in result.columns if col.endswith('_dup')]
+    if dup_cols:
+        result = result.drop(dup_cols)
     
     return result
 
@@ -292,7 +317,7 @@ def information_ratio(
         DataFrame with columns: ts_code, information_ratio
     """
     if index_data is None or index_data.is_empty():
-        raise ValueError("指数数据为空，无法计算信息比率")
+        raise ValueError("指数数据为空，无法计算信息比率。请先加载指数数据或使用不需要指数的指标")
     
     # 统一预处理
     index_returns_map = prepare_index_returns(index_data)
@@ -326,6 +351,11 @@ def information_ratio(
     )
     
     all_stocks = stock_data.select(pl.col('ts_code').unique())
-    result = all_stocks.join(ir_per_stock, on='ts_code', how='left')
+    result = all_stocks.join(ir_per_stock, on='ts_code', how='left', suffix='_dup')
+    
+    # 移除带 _dup 后缀的列
+    dup_cols = [col for col in result.columns if col.endswith('_dup')]
+    if dup_cols:
+        result = result.drop(dup_cols)
     
     return result

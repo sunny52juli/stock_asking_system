@@ -1,6 +1,6 @@
 """缓存模块."""
 
-from infrastructure.cache.cache_layer import (
+from utils.cache_utils import (
     LRUCache,
     DiskCache,
     MultiLevelCache,

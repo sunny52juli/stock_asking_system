@@ -5,7 +5,8 @@ import pytest
 
 from infrastructure.config.settings import get_settings
 from infrastructure.errors.exceptions import QuantSystemError, DataError
-from infrastructure.logging.logger import get_logger, configure_logging, LoggerMixin
+from infrastructure.logging.logger import get_logger, configure_logging
+from utils.logging_utils import LoggerMixin
 def test_infrastructure_imports():
     """测试 infrastructure 模块导入."""
     

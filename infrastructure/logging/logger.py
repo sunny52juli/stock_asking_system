@@ -95,14 +95,3 @@ def get_logger(name: str = None) -> logging.Logger:
         logger.setLevel(_log_level)
 
     return logger
-
-
-class LoggerMixin:
-    """日志混入类 - 可以混入到任何类中，提供 self.logger 属性."""
-
-    @property
-    def logger(self) -> logging.Logger:
-        """获取类专属的日志器"""
-        if not hasattr(self, "_logger"):
-            self._logger = get_logger(self.__class__.__name__)
-        return self._logger

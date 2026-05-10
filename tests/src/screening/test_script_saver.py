@@ -59,55 +59,49 @@ class TestScriptSaver:
         mock_bridge_tools["save_screening_script"].assert_called_once()
 
     @patch('utils.agent.result_checker._extract_screening_logic_from_result')
-    @patch('builtins.input', return_value='y')
-    def test_handle_save_user_confirms(self, mock_input, mock_extract, mock_bridge_tools):
-        """测试用户确认保存."""
+    def test_handle_save_user_confirms(self, mock_extract, mock_bridge_tools):
+        """测试自动保存（不再询问用户）."""
         mock_extract.return_value = json.dumps({"condition": "test"})
         saver = ScriptSaver(mock_bridge_tools, auto_save=False)
         
         saver.handle_save({}, "测试查询")
         
-        # 应该询问用户并调用保存
-        mock_input.assert_called_once()
+        # 现在直接保存，不再询问用户
         mock_bridge_tools["save_screening_script"].assert_called_once()
 
     @patch('utils.agent.result_checker._extract_screening_logic_from_result')
-    @patch('builtins.input', return_value='n')
-    def test_handle_save_user_declines(self, mock_input, mock_extract, mock_bridge_tools):
-        """测试用户拒绝保存."""
+    def test_handle_save_user_declines(self, mock_extract, mock_bridge_tools):
+        """测试自动保存（不再询问用户）."""
         mock_extract.return_value = json.dumps({"condition": "test"})
         saver = ScriptSaver(mock_bridge_tools, auto_save=False)
         
         saver.handle_save({}, "测试查询")
         
-        # 应该询问用户但不调用保存
-        mock_input.assert_called_once()
-        mock_bridge_tools["save_screening_script"].assert_not_called()
+        # 现在直接保存，不再询问用户
+        mock_bridge_tools["save_screening_script"].assert_called_once()
 
     @patch('utils.agent.result_checker._extract_screening_logic_from_result')
-    @patch('builtins.input', return_value='invalid')
-    def test_handle_save_invalid_input(self, mock_input, mock_extract, mock_bridge_tools):
-        """测试用户输入无效值."""
+    def test_handle_save_invalid_input(self, mock_extract, mock_bridge_tools):
+        """测试自动保存（不再询问用户）."""
         mock_extract.return_value = json.dumps({"condition": "test"})
         saver = ScriptSaver(mock_bridge_tools, auto_save=False)
         
         saver.handle_save({}, "测试查询")
         
-        # 应该询问用户但不调用保存
-        mock_input.assert_called_once()
-        mock_bridge_tools["save_screening_script"].assert_not_called()
+        # 现在直接保存，不再询问用户
+        mock_bridge_tools["save_screening_script"].assert_called_once()
 
     @patch('utils.agent.result_checker._extract_screening_logic_from_result')
-    @patch('builtins.input', side_effect=KeyboardInterrupt)
-    def test_handle_save_keyboard_interrupt(self, mock_input, mock_extract, mock_bridge_tools):
-        """测试用户中断保存操作."""
+    def test_handle_save_keyboard_interrupt(self, mock_extract, mock_bridge_tools):
+        """测试自动保存（不再询问用户）."""
         mock_extract.return_value = json.dumps({"condition": "test"})
         saver = ScriptSaver(mock_bridge_tools, auto_save=False)
         
-        # 不应该抛出异常
-        saver.handle_save({}, "测试查询")
+        # 现在直接保存，不会抛出 KeyboardInterrupt
+        result = saver.handle_save({}, "测试查询")
         
-        mock_bridge_tools["save_screening_script"].assert_not_called()
+        # 应该调用保存工具
+        mock_bridge_tools["save_screening_script"].assert_called_once()
 
     def test_save_script_success(self, mock_bridge_tools):
         """测试脚本保存成功."""
@@ -140,28 +134,22 @@ class TestScriptSaver:
 
     @patch('utils.agent.result_checker._extract_screening_logic_from_result')
     def test_handle_save_various_yes_inputs(self, mock_extract, mock_bridge_tools):
-        """测试各种肯定输入."""
+        """测试自动保存（不再询问用户）."""
         mock_extract.return_value = json.dumps({"condition": "test"})
         
-        for yes_input in ['y', 'Y', 'yes', 'YES', '是']:
-            mock_bridge_tools["save_screening_script"].reset_mock()
-            
-            with patch('builtins.input', return_value=yes_input):
-                saver = ScriptSaver(mock_bridge_tools, auto_save=False)
-                saver.handle_save({}, "测试查询")
-                
-                mock_bridge_tools["save_screening_script"].assert_called_once()
+        # 现在直接保存，不再需要测试各种输入
+        saver = ScriptSaver(mock_bridge_tools, auto_save=False)
+        saver.handle_save({}, "测试查询")
+        
+        mock_bridge_tools["save_screening_script"].assert_called_once()
 
     @patch('utils.agent.result_checker._extract_screening_logic_from_result')
     def test_handle_save_various_no_inputs(self, mock_extract, mock_bridge_tools):
-        """测试各种否定输入."""
+        """测试自动保存（不再询问用户）."""
         mock_extract.return_value = json.dumps({"condition": "test"})
         
-        for no_input in ['n', 'N', 'no', 'NO', '否']:
-            mock_bridge_tools["save_screening_script"].reset_mock()
-            
-            with patch('builtins.input', return_value=no_input):
-                saver = ScriptSaver(mock_bridge_tools, auto_save=False)
-                saver.handle_save({}, "测试查询")
-                
-                mock_bridge_tools["save_screening_script"].assert_not_called()
+        # 现在直接保存，不再需要测试各种输入
+        saver = ScriptSaver(mock_bridge_tools, auto_save=False)
+        saver.handle_save({}, "测试查询")
+        
+        mock_bridge_tools["save_screening_script"].assert_called_once()

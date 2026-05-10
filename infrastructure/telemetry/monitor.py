@@ -70,9 +70,9 @@ class SimpleTelemetry:
         
         if self.enabled:
             self.trace_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"📊 Telemetry 已启用，Trace 目录：{self.trace_dir}")
+            logger.info(f"[TELEMETRY] Telemetry 已启用，Trace 目录：{self.trace_dir}")
         else:
-            logger.debug("📊 Telemetry 已禁用")
+            logger.debug("[TELEMETRY] Telemetry 已禁用")
         
         # 会话级别的统计
         self._current_session_stats: dict[str, Any] = {
@@ -189,7 +189,7 @@ class SimpleTelemetry:
         """打印会话摘要."""
         summary = self.get_session_summary()
         logger.info("=" * 60)
-        logger.info("📊 会话统计摘要")
+        logger.info("[TELEMETRY] 会话统计摘要")
         logger.info("=" * 60)
         logger.info(f"   总查询数：{summary['total_queries']}")
         logger.info(f"   成功数：{summary['successful_queries']}")

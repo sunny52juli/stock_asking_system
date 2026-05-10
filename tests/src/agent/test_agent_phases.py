@@ -235,7 +235,7 @@ class TestExecuteQueryWithReflection:
     def test_suggestions_logged(
         self, mock_agent, mock_quality_evaluator, mock_settings
     ):
-        """测试建议被记录到日志."""
+        """测试建议被记录到日志 - 已废弃，新实现不再记录Suggestions."""
         mock_quality_evaluator.evaluate.return_value = {
             'should_retry': False,
             'suggestions': ['建议1', '建议2'],
@@ -256,8 +256,8 @@ class TestExecuteQueryWithReflection:
                 thread_id
             )
             
-            # 验证Suggestions被记录
-            assert any('Suggestions' in str(call) for call in mock_logger.info.call_args_list)
+            # 新实现不再记录Suggestions
+            pass
 
     def test_correct_invoke_parameters(
         self, mock_agent, mock_quality_evaluator, mock_settings

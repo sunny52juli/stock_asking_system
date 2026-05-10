@@ -1,4 +1,4 @@
-"""
+﻿"""
 import re
 数据字段配置 - 定义系统支持的所有股票数据字段
 
@@ -378,7 +378,7 @@ if __name__ == "__main__":
     test_fields = ["收盘价", "close", "换手率", "turnover"]
     for field in test_fields:
         is_valid = DataFields.is_valid_field(field)
-        print(f"   {field}: {'✅ 有效' if is_valid else '❌ 无效'}")
+        print(f"   {field}: {'[OK] 有效' if is_valid else '[ERROR] 无效'}")
         if not is_valid:
             print(f"      {get_field_suggestion(field)}")
 
@@ -630,7 +630,7 @@ def generate_field_markdown():
 
     # 生成 Markdown
     markdown = []
-    markdown.append("## ⚠️ 可用数据字段（重要约束）\n")
+    markdown.append("## [WARN] 可用数据字段（重要约束）\n")
     markdown.append("### 标准字段（必须使用以下字段，不得编造）\n")
     markdown.append("系统提供以下标准化的股票数据字段，**所有因子构建必须且只能使用这些字段**：\n")
 
@@ -658,9 +658,9 @@ def print_field_summary():
     print("=" * 80)
     print("字段映射配置摘要")
     print("=" * 80)
-    print(f"\n✅ 总字段数量: {len(set(FIELD_MAPPING.values()))}")
-    print(f"✅ 中文别名数量: {len(FIELD_MAPPING)}")
-    print(f"✅ 函数映射数量: {len(FUNCTION_MAPPING)}")
+    print(f"\n[OK] 总字段数量: {len(set(FIELD_MAPPING.values()))}")
+    print(f"[OK] 中文别名数量: {len(FIELD_MAPPING)}")
+    print(f"[OK] 函数映射数量: {len(FUNCTION_MAPPING)}")
 
     # 按类别统计
     categories = {
@@ -709,7 +709,7 @@ def print_field_summary():
         "衍生字段": ["vwap", "ret", "volatility"],
     }
 
-    print("\n📊 字段分类统计:")
+    print("\n[DATA] 字段分类统计:")
     for category, fields in categories.items():
         print(f"  - {category}: {len(fields)} 个字段")
 

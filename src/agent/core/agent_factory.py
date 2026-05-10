@@ -1,341 +1,380 @@
-"""DeepAgent factory for creating the screener agent.
-
-This module integrates deepagents framework with our custom components:
-- Skills System (三层渐进加载) → deepagents skills
-- Memory System (LongTermMemory) → deepagents memory (AGENTS.md)
-- Context Engineering (ContextInjector) → system_prompt
-- Tool Provider (MCP + Bridge tools) → deepagents tools
-- Harness Framework (Hooks/Rules/Permissions) → 约束框架
-- Session Management → 会话持久化
-- Retry Manager → 错误重试管理
-
-Architecture:
-- Deep thinking mode: Use deepagents as a single powerful agent with planning capabilities
-- Quick mode: Use simple LangGraph ReAct Agent without write_todos
-- Inject our domain-specific skills, tools, and memory
-- Apply harness constraints (hooks, rules, permissions)
-"""
+"""Agent工厂 - 负责Agent的创建和复用."""
 
 from __future__ import annotations
 
-import json
-import logging
 from pathlib import Path
 from typing import Any
 
-from deepagents import create_deep_agent
-from deepagents.backends import StateBackend
-from deepagents.backends.utils import create_file_data
-from langchain_core.language_models import BaseChatModel
-from langgraph.checkpoint.memory import MemorySaver
+from infrastructure.logging.logger import get_logger
+from utils.agent.llm_helper import build_llm_from_api_config
 
-from src.agent.context.prompts import SYSTEM_PROMPT_TEMPLATE
-from src.agent.context.skill_registry import SkillRegistry
-from src.agent.harness.rules import RulesLoader
-from src.agent.memory.protocols import LongTermMemory
-from src.agent.tools.provider import ScreenerToolProvider
+logger = get_logger(__name__)
 
 
-logger = logging.getLogger(__name__)
+class AgentFactory:
+    """Agent工厂 - 管理Agent的生命周期."""
+    
+    def __init__(self, settings: Any):
+        """初始化.
+        
+        Args:
+            settings: 全局配置
+        """
+        self.settings = settings
+        self.agent = None
+        self.initial_files = None
+    
+    def create_or_reuse(
+        self,
+        component_initializer,
+        query: str | None = None,
+        bridge_tools: dict | None = None
+    ) -> tuple[Any, dict]:
+        """创建或复用Agent.
+        
+        Args:
+            component_initializer: 组件初始化器
+            query: 用户查询（可选）
+            bridge_tools: 桥接工具（交互式模式）
+            
+        Returns:
+            (Agent实例, initial_files)
+        """
+        # Deep Mode: Agent已预创建，直接返回
+        if self.settings.harness.deep_thinking and self.agent:
+            logger.debug("Reusing pre-created deep thinking agent")
+            return self.agent, self.initial_files
+        
+        # Quick Mode: 检查是否可以复用
+        if not self.settings.harness.deep_thinking and self.agent:
+            logger.debug("Reusing quick mode agent")
+            return self.agent, self.initial_files
+        
+        # 创建新Agent
+        logger.info(f"Creating new agent (deep_thinking={self.settings.harness.deep_thinking})...")
+        
+        # 交互式模式：动态创建所需组件
+        if bridge_tools:
+            components = self._create_interactive_components(component_initializer, bridge_tools)
+        else:
+            # 批量模式：使用component_initializer的组件
+            components = {
+                "tool_provider": component_initializer.tool_provider,
+                "skill_registry": component_initializer.skill_registry,
+                "long_term_memory": component_initializer.long_term_memory,
+            }
+        
+        # 创建Agent
+        self.agent, self.initial_files = component_initializer.create_agent(
+            llm=component_initializer.llm,
+            **components,
+            query=query,
+        )
+        
+        return self.agent, self.initial_files
+    
+    def _create_interactive_components(
+        self,
+        component_initializer,
+        bridge_tools: dict
+    ) -> dict:
+        """为交互式模式动态创建组件.
+        
+        Args:
+            component_initializer: 组件初始化器
+            bridge_tools: 桥接工具
+            
+        Returns:
+            组件字典
+        """
+        from src.agent.tools.provider import ScreenerToolProvider
+        from src.agent.context.skill_registry import SkillRegistry
+        from src.agent.memory.long_term import LongTermMemory
+        
+        # 动态创建LLM（如果尚未创建）
+        if not component_initializer.llm:
+            logger.info("[CONFIG] 创建LLM（交互式模式）...")
+            api_config = self.settings.llm.to_dict()
+            
+            # 验证API Key
+            if not api_config.get('api_key'):
+                logger.error("[ERROR] API Key未配置！请检查.env文件")
+                raise ValueError("API Key未配置，无法创建LLM")
+            
+            component_initializer.llm = build_llm_from_api_config(api_config)
+            logger.info(f"[OK] LLM创建完成: {api_config.get('model')}")
+        
+        tool_provider = ScreenerToolProvider(mcp_tools=[], bridge_tools=bridge_tools)
+        skill_registry = SkillRegistry()
+        
+        # 使用项目根目录下的memory.db
+        db_path = Path(__file__).resolve().parent.parent.parent.parent / ".stock_asking" / "memory.db"
+        long_term_memory = LongTermMemory(db_path=db_path)
+        
+        return {
+            "tool_provider": tool_provider,
+            "skill_registry": skill_registry,
+            "long_term_memory": long_term_memory,
+        }
+    
+    def update_executor(self, query_executor):
+        """更新查询执行器的Agent引用.
+        
+        Args:
+            query_executor: 查询执行器实例
+        """
+        if query_executor:
+            query_executor.agent = self.agent
+            query_executor.initial_files = self.initial_files
 
 
 def create_screener_agent(
-    llm: BaseChatModel,
-    tool_provider: ScreenerToolProvider,
-    skill_registry: SkillRegistry,
-    long_term_memory: LongTermMemory,
-    skills_dir: Path | None = None,
-    deep_thinking: bool = False,
-    max_iterations: int = 2,
-    query: str | None = None,
-    rules_dict: dict[str, str] | None = None,
-) -> Any:
-    """Create the screener agent.
-
-    Args:
-        llm: Language model
-        tool_provider: Tool provider for MCP and Bridge tools
-        skill_registry: Registry for loading skills
-        long_term_memory: Long-term memory for cross-session persistence
-        skills_dir: Directory containing SKILL.md files
-        deep_thinking: If True, use deepagents with write_todos; if False, use simple ReAct agent
-        max_iterations: Maximum iterations for agent execution (controls recursion limit)
-        query: User query for intelligent memory/skill loading
-        rules_dict: Rules dictionary from RulesLoader (will be injected into system prompt)
-
-    Returns:
-        Compiled Agent (CompiledStateGraph)
-    """
-    logger.info("Creating screener agent (deep_thinking=%s, max_iterations=%d)", deep_thinking, max_iterations)
-
-    # Get all tools (MCP + Bridge)
-    all_tools = tool_provider.get_tools_for_agent("all")
-
-    # Build system prompt with domain knowledge and rules
-    system_prompt = _build_system_prompt(tool_provider, skill_registry, rules_dict)
-
-    if deep_thinking:
-        # 深度思考模式：使用 deepagents（包含 write_todos）
-        return _create_deep_agent_mode(
-            llm=llm,
-            tools=all_tools,
-            system_prompt=system_prompt,
-            skill_registry=skill_registry,
-            long_term_memory=long_term_memory,
-            skills_dir=skills_dir,
-            max_iterations=max_iterations,
-            query=query,
-        )
-    else:
-        # 快速模式：使用简单 ReAct Agent（不包含 write_todos）
-        return _create_react_agent_mode(
-            llm=llm,
-            tools=all_tools,
-            system_prompt=system_prompt,
-            max_iterations=max_iterations,
-        )
-
-
-def _build_system_prompt(
-    tool_provider: ScreenerToolProvider, 
-    skill_registry: SkillRegistry,
-    rules_dict: dict[str, str] | None = None
-) -> str:
-    """Build the system prompt for the screener agent.
+    llm,
+    tool_provider,
+    skill_registry,
+    long_term_memory,
+    skills_dir=None,
+    deep_thinking=False,
+    query=None,
+    rules_dict=None,
+) -> tuple[Any, dict]:
+    """创建股票筛选Agent（兼容旧接口）.
     
     Args:
-        tool_provider: Tool provider
-        skill_registry: Skill registry
-        rules_dict: Rules dictionary from RulesLoader
+        llm: LLM实例
+        tool_provider: 工具提供者
+        skill_registry: 技能注册表
+        long_term_memory: 长期记忆
+        skills_dir: Skills目录（可选）
+        deep_thinking: 是否深度思考模式
+        max_iterations: 最大迭代次数
+        query: 用户查询（可选）
+        rules_dict: 规则字典（可选）
         
     Returns:
-        Complete system prompt with tools, skills, and rules
+        (Agent实例, initial_files)元组
     """
+    # 导入DeepAgents或LangGraph相关模块
+    try:
+        if deep_thinking:
+            from deepagents import create_deep_agent
+            from deepagents.backends.state import StateBackend
+            from langgraph.checkpoint.memory import MemorySaver
+            
+            # 准备 Skills 文件
+            skills_files = _prepare_skills_files(skill_registry, skills_dir)
+            
+            # 准备 Memory 文件 (AGENTS.md)
+            memory_content = _build_memory_content(long_term_memory, query)
+            
+            # 合并 Skills 和 Memory 到 initial_files
+            initial_files = {
+                **skills_files,
+                "/AGENTS.md": _create_file_data(memory_content),
+            }
+            
+            # 创建 checkpointer（Memory 必需）
+            checkpointer = MemorySaver()
+            
+            # 创建 Deep Agent
+            agent = create_deep_agent(
+                model=llm,
+                tools=tool_provider.get_tools_for_agent("all"),
+                system_prompt=_build_system_prompt(rules_dict),
+                backend=(lambda rt: StateBackend(rt)),
+                skills=["/skills/"],
+                memory=["/AGENTS.md"],
+                checkpointer=checkpointer,
+            )
+            
+            logger.info("[OK] Deep thinking agent created successfully")
+        else:
+            from langgraph.prebuilt import create_react_agent
+            agent = create_react_agent(
+                model=llm,
+                tools=tool_provider.get_tools_for_agent("all"),
+                state_modifier=_build_system_prompt(rules_dict),
+            )
+            
+            # 快速模式不需要 initial_files
+            initial_files = {
+                "skills": {},
+                "rules": rules_dict or [],
+            }
+        
+        return agent, initial_files
+        
+    except ImportError as e:
+        logger.error(f"[ERROR] 无法导入Agent框架: {e}")
+        raise
 
 
-    tool_descriptions = tool_provider.get_tool_descriptions()
-    tools_json = json.dumps(tool_descriptions, ensure_ascii=False, indent=2)
+def _build_system_prompt(rules_dict=None) -> str:
+    """构建系统提示词.
     
-    logger.info(f"🔧 Injecting {len(tool_descriptions)} tool descriptions into System Prompt")
-    if tool_descriptions:
-        logger.info(f"   Tools: {[t['name'] for t in tool_descriptions]}")
+    Args:
+        rules_dict: 规则字典
+        
+    Returns:
+        系统提示词字符串
+    """
+    base_prompt = """你是一个专业的量化交易策略助手。
 
-    # 基础 prompt
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(tools_json=tools_json)
-    
-    # 添加强制停止规则，避免无限循环
-    system_prompt += """
+你的任务是帮助用户根据自然语言描述生成股票筛选策略。
 
-## ⚠️ 重要：停止条件（必须遵守）
+## 工作流程
+1. 理解用户的选股意图
+2. 分析需要的技术指标和条件
+3. 使用可用工具获取数据并执行筛选
+4. 返回符合条件的股票列表
 
-**为避免无限循环，你必须严格遵守以下规则：**
-
-### 1. 最多尝试 3 次不同的筛选策略
-- **第 1 次**：使用最直接、最符合用户需求的策略
-- **第 2 次**：如果第1次返回空结果，调整参数或更换指标
-- **第 3 次**：如果第2次仍为空，使用简化条件或替代方案
-- **第 3 次后无论结果如何，必须停止并返回最终报告**
-
-### 2. 连续 2 次空结果立即停止
-- 如果 `run_screening` 连续 2 次返回 `candidates: []`
-- **不要继续尝试新策略**
-- 直接向用户说明："当前市场条件下未找到符合条件的股票"
-- 提供可能的原因分析和建议
-
-### 3. 禁止无限重试
-- ❌ **错误做法**：不断修改参数直到找到结果（会导致 recursion limit 错误）
-- ✅ **正确做法**：尝试 2-3 次后，承认无解并给出专业建议
-
-### 4. 每次调用后检查 candidates 数量
-```python
-result = run_screening(...)
-if result['count'] == 0:
-    # 记录这次失败
-    failed_attempts += 1
-    if failed_attempts >= 2:
-        # 立即停止，返回最终报告
-        return {
-            "status": "completed",
-            "message": "经过多次尝试，当前市场条件下未找到符合条件的股票",
-            "attempts": failed_attempts,
-            "suggestions": [...]
-        }
-```
-
-### 5. 识别"无解"情况
-以下情况说明应该停止：
-- 市场整体下跌，没有股票满足"跑赢大盘"
-- 波动率阈值设置过严，没有股票符合
-- 数据不足或工具不可用
-
-**记住：承认无解比无限重试更专业！**
+## 注意事项
+- 始终验证筛选结果的合理性
+- 如果结果为空，尝试调整参数
+- 保存成功的筛选脚本供后续使用
 """
     
-    # 注入 Rules（如果提供）
     if rules_dict:
-        rules_section = RulesLoader.build_rules_section(rules_dict)
-        system_prompt += rules_section
-        logger.info(f"Injected {len(rules_dict)} rules into system prompt")
-
-    return system_prompt
-
-
-def _prepare_skills_files(
-    skill_registry: SkillRegistry, skills_dir: Path | None
-) -> dict[str, Any]:
-    """Prepare skills files for deepagents StateBackend.
+        rules_section = "\n\n## 必须遵守的规则\n"
+        for i, rule in enumerate(rules_dict, 1):
+            rules_section += f"{i}. {rule}\n"
+        return base_prompt + rules_section
     
-    DeepAgents 会通过 read_file 工具自适应选择合适的 Skills。
+    return base_prompt
+
+
+def _load_skills_to_files(skills_dir) -> dict:
+    """加载Skills到文件上下文中.
+    
+    Args:
+        skills_dir: Skills目录路径
+        
+    Returns:
+        文件字典
     """
-    skills_files = {}
-    all_skills = skill_registry.all_skills
+    from pathlib import Path
     
-    logger.info(f"📦 Preparing {len(all_skills)} skills for DeepAgents: {list(all_skills.keys())}")
+    skills_path = Path(skills_dir)
+    if not skills_path.exists():
+        return {}
+    
+    files = {}
+    for skill_file in skills_path.rglob("SKILL.md"):
+        try:
+            relative_path = str(skill_file.relative_to(skills_path.parent))
+            files[relative_path] = skill_file.read_text(encoding='utf-8')
+        except Exception as e:
+            logger.warning(f"[WARN] 加载Skill失败 {skill_file}: {e}")
+    
+    return files
 
-    for skill_name, skill in all_skills.items():
-        skill_path = f"/skills/{skill_name}/SKILL.md"
-        skills_files[skill_path] = create_file_data(skill.content)
-        logger.debug("Prepared skill file: %s", skill_path)
 
+def _prepare_skills_files(skill_registry, skills_dir) -> dict:
+    """准备 Skills 文件用于 deepagents.
+    
+    Args:
+        skill_registry: Skill 注册表
+        skills_dir: Skills 目录路径
+        
+    Returns:
+        Skills 文件字典，键为 /skills/xxx 格式
+    """
+    from pathlib import Path
+    
+    skills_files = {}
+    registered_skill_names = set()
+    
+    # 从 skill_registry 加载已注册的 Skills（优先）
+    if skill_registry:
+        # SkillRegistry 使用 _skills 属性
+        for skill_name, skill in skill_registry._skills.items():
+            file_path = f"/skills/{skill_name}/SKILL.md"
+            skills_files[file_path] = _create_file_data(skill.content)
+            registered_skill_names.add(skill_name)
+    
+    # 从文件系统加载额外的 Skills（去重）
+    if skills_dir:
+        skills_path = Path(skills_dir)
+        if skills_path.exists():
+            for skill_file in skills_path.rglob("SKILL.md"):
+                try:
+                    relative_path = skill_file.relative_to(skills_path)
+                    # 提取 skill 名称用于去重判断
+                    skill_name = str(relative_path).replace("\\", "/").rstrip("/SKILL.md")
+                    
+                    # 如果该 skill 已经在 registry 中，跳过
+                    if skill_name in registered_skill_names:
+                        logger.debug(f"跳过重复的 Skill: {skill_name}")
+                        continue
+                    
+                    file_path = f"/skills/{relative_path}"
+                    content = skill_file.read_text(encoding='utf-8')
+                    skills_files[file_path] = _create_file_data(content)
+                except Exception as e:
+                    logger.warning(f"[WARN] 加载Skill文件失败 {skill_file}: {e}")
+    
     return skills_files
 
 
-def _build_memory_content(
-    long_term_memory: LongTermMemory,
-    query: str | None = None
-) -> str:
-    """Build AGENTS.md content from long-term memory.
+def _build_memory_content(long_term_memory, query=None) -> str:
+    """构建 Memory 内容 (AGENTS.md).
     
     Args:
-        long_term_memory: Long-term memory instance
-        query: Current user query for relevant memory retrieval
+        long_term_memory: 长期记忆实例
+        query: 用户查询（用于检索相关记忆）
         
     Returns:
-        Formatted memory content as markdown
+        Memory 内容字符串
     """
-    try:
+    memory_lines = [
+        "# Agent Memory",
+        "",
+        "This file contains the agent's long-term memory and preferences.",
+        "",
+    ]
+    
+    if long_term_memory:
+        # 如果有查询，检索相关策略
         if query:
-            # 智能检索：基于关键词搜索相关历史
-            keywords = [word for word in query.split() if len(word) > 1]
-            relevant_strategies = []
-            
-            for keyword in keywords[:3]:  # 最多用 3 个关键词
-                strategies = long_term_memory.search_strategies(keyword, limit=3)
-                relevant_strategies.extend(strategies)
-            
-            # 去重并按时间排序
-            seen = set()
-            unique_strategies = []
-            for s in relevant_strategies:
-                if s.strategy_name not in seen:
-                    seen.add(s.strategy_name)
-                    unique_strategies.append(s)
-            
-            recent_strategies = unique_strategies[:5]  # 最多 5 条
+            strategies = long_term_memory.search_strategies(query, limit=10)
         else:
-            # 回退：获取最近的策略
-            recent_strategies = long_term_memory.get_recent_strategies(limit=5)
+            # 否则获取最近的策略
+            strategies = long_term_memory.get_recent_strategies(limit=10)
         
-        if not recent_strategies:
-            return "# Agent Memory\n\n暂无历史记录。"
-        
-        lines = ["# Agent Memory\n", "## Relevant History\n"]
-        for strategy in recent_strategies:
-            lines.append(f"### {strategy.strategy_name}")
-            lines.append(f"- **Query**: {strategy.query}")
-            lines.append(f"- **Candidates**: {strategy.candidates_count}")
-            lines.append(f"- **Date**: {strategy.created_at}")
-            lines.append("")
-        
-        logger.info(f"Loaded {len(recent_strategies)} relevant memories")
-        return "\n".join(lines)
-    except Exception as e:
-        logger.warning(f"Failed to build memory content: {e}")
-        return "# Agent Memory\n\n暂无历史记录。"
+        if strategies:
+            memory_lines.append("## Recent Strategies")
+            memory_lines.append("")
+            for i, strategy in enumerate(strategies, 1):
+                memory_lines.append(f"{i}. **{strategy.strategy_name}**")
+                memory_lines.append(f"   - Query: {strategy.query}")
+                memory_lines.append(f"   - Candidates: {strategy.candidates_count}")
+                if strategy.created_at:
+                    memory_lines.append(f"   - Time: {strategy.created_at}")
+                memory_lines.append("")
+        else:
+            memory_lines.append("## No strategies yet")
+            memory_lines.append("")
+            memory_lines.append("The agent is starting fresh. Build knowledge through interactions.")
+    else:
+        memory_lines.append("## Memory system not initialized")
+        memory_lines.append("")
+    
+    return "\n".join(memory_lines)
 
 
-def _create_deep_agent_mode(
-    llm: BaseChatModel,
-    tools: list[Any],
-    system_prompt: str,
-    skill_registry: SkillRegistry,
-    long_term_memory: LongTermMemory,
-    skills_dir: Path | None = None,
-    max_iterations: int = 2,
-    query: str | None = None,
-) -> tuple[Any, dict[str, Any]]:
-    """创建深度思考模式的 Agent（使用 deepagents，包含 write_todos）.
+def _create_file_data(content: str) -> dict:
+    """创建文件数据对象.
     
     Args:
-        llm: Language model
-        tools: List of tools
-        system_prompt: System prompt
-        skill_registry: Skill registry
-        long_term_memory: Long-term memory
-        skills_dir: Skills directory
-        max_iterations: Maximum iterations (recursion limit)
-        query: User query for intelligent memory/skill loading
+        content: 文件内容
         
     Returns:
-        (agent, initial_files) tuple
+        文件数据字典
     """
-    logger.info("Creating deep thinking agent with deepagents framework (max_iterations=%d)", max_iterations)
+    from datetime import datetime
     
-    # Prepare skills files for deepagents
-    skills_files = _prepare_skills_files(skill_registry, skills_dir)
-
-    # Prepare memory file (AGENTS.md) from long-term memory
-    memory_content = _build_memory_content(long_term_memory, query)
-
-    # Combine skills and memory into initial files
-    initial_files = {**skills_files, "/AGENTS.md": create_file_data(memory_content)}
-
-    # Create checkpointer (required for memory)
-    checkpointer = MemorySaver()
-
-    # Create the deep agent
-    agent = create_deep_agent(
-        model=llm,
-        tools=tools,
-        system_prompt=system_prompt,
-        backend=(lambda rt: StateBackend(rt)),
-        skills=["/skills/"],
-        memory=["/AGENTS.md"],
-        checkpointer=checkpointer,
-    )
-
-    logger.info("Deep thinking agent created successfully")
-    return agent, initial_files
-
-
-def _create_react_agent_mode(
-    llm: BaseChatModel,
-    tools: list[Any],
-    system_prompt: str,
-    max_iterations: int = 2,
-) -> tuple[Any, dict[str, Any]]:
-    """创建快速模式的 Agent（使用 LangGraph ReAct，不包含 write_todos）.
-    
-    Args:
-        llm: Language model
-        tools: List of tools (不会包含 write_todos)
-        system_prompt: System prompt
-        max_iterations: Maximum iterations (stored for later use in invoke config)
-        
-    Returns:
-        (agent, empty_dict) tuple
-    """
-    
-    logger.info("Creating quick mode agent with LangGraph ReAct (no write_todos, max_iterations=%d)", max_iterations)
-    
-    # 创建简单的 ReAct Agent
-    # 注意：这个 Agent 不会有 write_todos、skills、memory 等 deepagents 特性
-    agent = create_react_agent(
-        model=llm,
-        tools=tools,
-        prompt=system_prompt,
-    )
-
-    logger.info("Quick mode agent created successfully")
-    # ReAct agent 不需要 initial_files
-    return agent, {}
+    return {
+        "content": [content],  # deepagents 期望 list[str]
+        "type": "text",
+        "modified_at": datetime.now().isoformat(),
+    }

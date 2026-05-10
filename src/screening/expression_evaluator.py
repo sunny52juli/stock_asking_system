@@ -1,19 +1,17 @@
-"""表达式评估器 - 负责向量化评估筛选表达式和置信度."""
+"""表达式评估器 - 负责向量化评估筛选表达式."""
 
 from __future__ import annotations
 
-import re
 import numpy as np
 import polars as pl
 
 from infrastructure.logging.logger import get_logger
-from src.screening.namespace_builder import NamespaceBuilder
 
 logger = get_logger(__name__)
 
 
 class ExpressionEvaluator:
-    """表达式评估器 - 负责向量化评估筛选表达式和置信度."""
+    """表达式评估器 - 负责向量化评估筛选表达式."""
 
     @staticmethod
     def evaluate_expression(
@@ -92,44 +90,3 @@ class ExpressionEvaluator:
         
         return matched_stocks, stats
 
-    @staticmethod
-    def calculate_confidence(
-        confidence_formula: str,
-        latest_namespace: dict,
-        valid_stocks: list[str],
-    ) -> list[float]:
-        """计算置信度.
-        
-        Args:
-            confidence_formula: 置信度公式
-            latest_namespace: 最新截面命名空间
-            valid_stocks: 有效股票列表
-            
-        Returns:
-            置信度值列表
-        """
-        conf_vars = NamespaceBuilder.extract_variables(confidence_formula)
-        for var in conf_vars:
-            if var not in latest_namespace:
-                latest_namespace[var] = pl.Series([np.nan] * len(valid_stocks))
-        
-        try:
-            # 检查置信度公式是否包含函数调用（不支持）
-            if re.search(r'\b[a-zA-Z_]\w*\s*\(', confidence_formula):
-                logger.warning(f"   ⚠️ 置信度公式包含函数调用（不支持），使用默认值 0.5")
-                logger.warning(f"      公式：{confidence_formula}")
-                logger.warning(f"      建议：直接使用指标变量，如 volatility_20 / ma20")
-                return [0.5] * len(valid_stocks)
-            else:
-                conf_raw = eval(confidence_formula, {"__builtins__": {}}, latest_namespace)
-                if isinstance(conf_raw, pl.Series):
-                    # Sigmoid 转换
-                    return (1.0 / (1.0 + np.exp(-conf_raw.to_numpy()))).tolist()
-                elif isinstance(conf_raw, (int, float)):
-                    conf_val = 1.0 / (1.0 + np.exp(-conf_raw))
-                    return [conf_val] * len(valid_stocks)
-                else:
-                    return [0.5] * len(valid_stocks)
-        except Exception as e:
-            logger.warning(f"   ⚠️ 置信度批量计算失败：{e}，使用默认值 0.5")
-            return [0.5] * len(valid_stocks)

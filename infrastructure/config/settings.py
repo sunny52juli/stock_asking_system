@@ -89,9 +89,8 @@ class StockPoolConfig(BaseModel):
 class OutputConfig(BaseModel):
     """输出配置."""
     strategies_dir: Path = Field(
-        default=Path(os.getenv("SCREENER_SCRIPTS_DIR", "./screening_scripts"))
+        default=Path(os.getenv("SCREENER_SCRIPTS_DIR", "./app/screening_scripts"))
     )
-    auto_save_script: bool = Field(default=False)  # 是否自动保存脚本，不询问用户
 
 
 class HarnessConfig(BaseModel):
@@ -108,6 +107,16 @@ class HarnessConfig(BaseModel):
                     {
                         "type": "command",
                         "command": "python hooks/validate-strategy.py"
+                    }
+                ]
+            },
+            # ✅ 新增：验证所有工具调用，防止使用不存在的工具
+            {
+                "matcher": ".*",  # 匹配所有工具
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "python hooks/validate-tool-call.py"
                     }
                 ]
             }
@@ -208,7 +217,7 @@ def load_settings(project_root: Path | None = None, config_files: list[str] | No
     """加载配置（多层合并）.
 
     加载顺序:
-    1. setting/screening.yaml - 策略配置和高级配置
+    1. setting/screening_interactive.yaml - 交互式筛选配置（主配置）
     2. setting/stock_pool.yaml - 股票池配置
     3. setting/backtest.yaml - 回测配置
     4. 环境变量 ${VAR:-default} (.env 文件)
@@ -227,7 +236,7 @@ def load_settings(project_root: Path | None = None, config_files: list[str] | No
     # 默认加载所有配置文件
     if config_files is None:
         config_files = [
-            "screening.yaml",
+            "screening_interactive.yaml",  # ✅ 使用交互式配置
             "stock_pool.yaml",
             "backtest.yaml",
         ]

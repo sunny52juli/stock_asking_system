@@ -1,4 +1,4 @@
-"""Tool provider for distributing tools across agents.
+﻿"""Tool provider for distributing tools across agents.
 
 Each agent receives only the tools relevant to its role:
 - IntentAgent: No tools (pure NLU)
@@ -74,7 +74,7 @@ class ScreenerToolProvider:
             if self._permission_checker.is_allowed(tool_name):
                 filtered.append(tool)
             else:
-                logger.warning(f"⚠️ 工具 '{tool_name}' 因权限限制被过滤")
+                logger.warning(f"[WARN] 工具 '{tool_name}' 因权限限制被过滤")
         
         logger.debug(f"权限过滤: {len(tools)} -> {len(filtered)} 个工具")
         return filtered
@@ -114,7 +114,7 @@ class ScreenerToolProvider:
                     if self._permission_checker.is_allowed(name):
                         tools.append(tool)
                     else:
-                        logger.warning(f"⚠️ MCP 工具 '{name}' 因权限限制被过滤")
+                        logger.warning(f"[WARN] MCP 工具 '{name}' 因权限限制被过滤")
             if mcp_names:
                 logger.debug(
                     "Agent '%s' receives %d specific MCP tools", agent_name, len(tools)
@@ -127,7 +127,7 @@ class ScreenerToolProvider:
                 if self._permission_checker.is_allowed(bridge_name):
                     tools.append(self._bridge_tools[bridge_name])
                 else:
-                    logger.warning(f"⚠️ Bridge 工具 '{bridge_name}' 因权限限制被过滤")
+                    logger.warning(f"[WARN] Bridge 工具 '{bridge_name}' 因权限限制被过滤")
             else:
                 logger.warning(
                     "Bridge tool '%s' requested by agent '%s' not found",

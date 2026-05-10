@@ -1,4 +1,4 @@
-"""FactorDataLoader: backtest data and stock pool via datahub Stock and Calendar.
+﻿"""FactorDataLoader: backtest data and stock pool via datahub Stock and Calendar.
 
 from infrastructure.config.settings import StockConfig
 from infrastructure.errors.exceptions import DataLoadError, StockPoolError
@@ -54,9 +54,9 @@ class FactorDataLoader(BaseDataLoader):
             settings = Settings()
             index_code = settings.stock_pool.index_code if hasattr(settings.stock_pool, 'index_code') else None
         if index_code:
-            print(f"📊 使用指数 {index_code} 的成分股作为股票池")
+            print(f"[DATA] 使用指数 {index_code} 的成分股作为股票池")
         else:
-            print("📊 使用全市场股票作为股票池")
+            print("[DATA] 使用全市场股票作为股票池")
         
         # trade_date 必须显式传入，禁止使用 latest_date() 获取未来日期
         if trade_date is None:
@@ -70,7 +70,7 @@ class FactorDataLoader(BaseDataLoader):
         )
         if not self._stock_pool:
             raise StockPoolError("无法获取股票池数据，请检查本地数据是否存在")
-        print(f"📊 股票池共 {len(self._stock_pool)} 只股票")
+        print(f"[DATA] 股票池共 {len(self._stock_pool)} 只股票")
         return self._stock_pool
 
     def load_market_data(
@@ -93,7 +93,7 @@ class FactorDataLoader(BaseDataLoader):
                 end_date = settings.backtest.get_data_end_date(screening_date) if hasattr(settings.backtest, 'get_data_end_date') else "20240331"
             else:
                 end_date = "20240331"
-        print(f"📊 加载回测数据: {start_date} ~ {end_date}")
+        print(f"[DATA] 加载回测数据: {start_date} ~ {end_date}")
         df = self._stock.price(start_date=start_date, end_date=end_date)
         if df.is_empty():
             raise DataLoadError(
@@ -106,7 +106,7 @@ class FactorDataLoader(BaseDataLoader):
             self._data = self._data.filter(pl.col("ts_code").is_in(pool))
         # Polars 使用 sort 代替 MultiIndex
         self._data = self._data.sort(["trade_date", "ts_code"])
-        print(f"✅ 已加载本地数据: {self._data.height} 条记录")
+        print(f"[OK] 已加载本地数据: {self._data.height} 条记录")
         print(
             f"   时间范围: {self._data.select(pl.col('trade_date').min())[0, 0]} ~ {self._data.select(pl.col('trade_date').max())[0, 0]}"
         )
@@ -146,5 +146,5 @@ class FactorDataLoader(BaseDataLoader):
 
     def clean_data(self, data: "pl.DataFrame | None" = None) -> "pl.DataFrame":
         cleaned = super().clean_data(data)
-        print(f"✅ 数据清洗完成: {cleaned.height if cleaned is not None else 0} 条记录")
+        print(f"[OK] 数据清洗完成: {cleaned.height if cleaned is not None else 0} 条记录")
         return cleaned

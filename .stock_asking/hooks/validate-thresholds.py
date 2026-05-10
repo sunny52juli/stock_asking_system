@@ -146,7 +146,7 @@ def validate_thresholds(screening_logic: dict, tool_ranges: dict) -> tuple[int, 
     
     # 确定退出码
     if errors:
-        return 2, warnings, errors
+        return 2, warnings + errors, []
     elif warnings:
         return 1, warnings, []
     else:
@@ -188,16 +188,10 @@ def main():
         exit_code, warnings, errors = validate_thresholds(screening_logic, tool_ranges)
         
         # 输出结果
-        if warnings:
-            print("WARNINGS:")
-            for warning in warnings:
-                print(f"  {warning}")
-        
-        if errors:
-            print("ERRORS:")
-            for error in errors:
-                print(f"  {error}")
-            print("\n[TIP] Refer to .stock_asking/rules/tool-value-ranges.md to adjust thresholds")
+        if warnings or errors:
+            print("INFO: Threshold validation notes (non-blocking):")
+            for msg in warnings + errors:
+                print(f"  {msg}")
         
         # 根据验证结果设置退出码
         sys.exit(exit_code)

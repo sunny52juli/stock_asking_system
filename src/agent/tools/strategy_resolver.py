@@ -1,4 +1,4 @@
-"""策略名称解析器 - 从配置文件查找匹配的策略."""
+﻿"""策略名称解析器 - 从配置文件查找匹配的策略."""
 
 from __future__ import annotations
 
@@ -50,7 +50,13 @@ def find_strategy_name_from_config(query: str, screening_logic: dict) -> str:
                 if total > 0 and overlap / total >= 0.5:
                     return strategy_name
     
-    # 如果没有找到匹配的策略，抛出异常
+    # 如果没有找到匹配的策略，使用 screening_logic 中的 name
+    logic_name = screening_logic.get('name', '')
+    if logic_name:
+        # [OK] 使用逻辑名称作为 fallback，确保脚本可以保存
+        return logic_name
+    
+    # 如果连 logic name 都没有，才抛出异常
     raise ValueError(
         f"无法在配置文件中找到匹配的策略。\n"
         f"用户查询: {query}\n"

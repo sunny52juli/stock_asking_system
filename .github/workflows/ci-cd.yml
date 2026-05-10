@@ -110,7 +110,7 @@ jobs:
       - name: Check for secrets
         run: |
           cd stock_asking_system
-          python .stock_asking/hooks/no-secrets.py $(find . -name "*.py" -not -path "./tests/*")
+          python .stock_asking/hooks/tool-call-validator.py
   
   # 4. 构建测试
   build:

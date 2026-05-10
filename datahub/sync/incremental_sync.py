@@ -1,4 +1,4 @@
-"""增量数据同步 - 高效的数据更新机制.
+﻿"""增量数据同步 - 高效的数据更新机制.
 
 import json
 支持：
@@ -137,8 +137,8 @@ class IncrementalSyncer:
         checkpoint = self._get_checkpoint(dataset)
         since_time = checkpoint.last_sync_time if checkpoint else None
         
-        logger.info(f"📅 上次同步: {since_time or '首次同步'}")
-        logger.info(f"📊 已同步记录数: {checkpoint.record_count if checkpoint else 0}")
+        logger.info(f"[DATE] 上次同步: {since_time or '首次同步'}")
+        logger.info(f"[DATA] 已同步记录数: {checkpoint.record_count if checkpoint else 0}")
         
         # 2. 分批获取并保存数据
         total_records = 0
@@ -152,18 +152,18 @@ class IncrementalSyncer:
                 try:
                     records = fetch_func(since_time=since_time, limit=batch_size)
                 except Exception as e:
-                    logger.error(f"❌ 数据获取失败: {e}")
+                    logger.error(f"[ERROR] 数据获取失败: {e}")
                     errors.append(str(e))
                     
                     if max_retries > 0:
-                        logger.warning(f"⚠️  重试 ({max_retries} 次剩余)...")
+                        logger.warning(f"[WARN]  重试 ({max_retries} 次剩余)...")
                         time.sleep(2 ** (3 - max_retries))  # 指数退避
                         return self.sync(dataset, fetch_func, save_func, batch_size, max_retries - 1)
                     else:
                         break
                 
                 if not records:
-                    logger.info("✅ 无新数据，同步完成")
+                    logger.info("[OK] 无新数据，同步完成")
                     break
                 
                 # 保存数据
@@ -172,7 +172,7 @@ class IncrementalSyncer:
                     total_records += len(records)
                     logger.info(f"  ✓ 已保存 {len(records)} 条记录 (累计: {total_records})")
                 except Exception as e:
-                    logger.error(f"❌ 数据保存失败: {e}")
+                    logger.error(f"[ERROR] 数据保存失败: {e}")
                     errors.append(str(e))
                     break
                 
@@ -194,7 +194,7 @@ class IncrementalSyncer:
                     break
         
         except Exception as e:
-            logger.exception(f"❌ 同步异常: {e}")
+            logger.exception(f"[ERROR] 同步异常: {e}")
             errors.append(str(e))
         
         # 3. 计算结果
@@ -210,7 +210,7 @@ class IncrementalSyncer:
         )
         
         logger.info("=" * 60)
-        logger.info(f"{'✅' if success else '❌'} 同步完成")
+        logger.info(f"{'[OK]' if success else '[ERROR]'} 同步完成")
         logger.info(f"   记录数: {total_records}")
         logger.info(f"   耗时: {duration:.2f}s")
         if errors:
@@ -236,7 +236,7 @@ class IncrementalSyncer:
             
             logger.debug(f"💾 检查点已保存: {checkpoint_file}")
         except Exception as e:
-            logger.warning(f"⚠️  检查点保存失败: {e}")
+            logger.warning(f"[WARN]  检查点保存失败: {e}")
     
     def _load_checkpoints(self):
         """从磁盘加载所有检查点."""
@@ -250,7 +250,7 @@ class IncrementalSyncer:
                 
                 logger.debug(f"📂 加载检查点: {checkpoint.dataset_name}")
             except Exception as e:
-                logger.warning(f"⚠️  检查点加载失败 {checkpoint_file}: {e}")
+                logger.warning(f"[WARN]  检查点加载失败 {checkpoint_file}: {e}")
     
     def _extract_timestamp(self, record: Any) -> datetime:
         """从记录中提取时间戳."""

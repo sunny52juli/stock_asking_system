@@ -8,7 +8,6 @@ import logging
 from utils.screening.stock_screener import StockScreener
 from .logic_validator import validate_screening_logic
 
-from src.agent.services.index_loader import load_and_merge_index_data
 logger = logging.getLogger(__name__)
 
 # 全局调用计数器（用于跟踪 Agent 重试）
@@ -31,8 +30,12 @@ def create_run_screening(
     Returns:
         run_screening 函数
     """
+    # 每次创建时重置全局状态（不跨会话保留）
+    global _run_screening_call_count, _last_screening_result
+    _run_screening_call_count = 0
+    _last_screening_result = None
 
-    def run_screening(screening_logic_json: str, top_n: int = 20) -> str:
+    def run_screening(screening_logic_json: str, top_n: int = 10) -> str:
         """执行股票筛选."""
         global _run_screening_call_count, _last_screening_result
         _run_screening_call_count += 1
@@ -72,38 +75,52 @@ def create_run_screening(
         if isinstance(data, tuple) and len(data) == 2:
             data, index_data = data
             if index_data is not None and not index_data.is_empty():
-                logger.info(f"📊 接收到独立的指数数据: {len(index_data)} 条记录")
+                logger.info(f"[DATA] 接收到独立的指数数据: {len(index_data)} 条记录")
             else:
+                logger.warning("[WARN] get_data() 返回的 index_data 为 None 或空，可能原因：")
+                logger.warning("   1. StockPoolService._load_index_data_from_raw() 加载失败")
+                logger.warning("   2. 指数缓存中缺少对应指数的数据")
+                logger.warning("   3. 指数数据查询日期范围无数据")
                 index_data = None
+        else:
+            logger.warning("[WARN] get_data() 未返回元组格式，无法获取 index_data")
         
         if data is None or data.is_empty():
             raise ValueError("No data available")
         
         # 检查是否需要指数数据（如果 tools_definition 或 tools 中包含指数相关工具）
         tools_def = screening_logic.get("tools_definition", []) or screening_logic.get("tools", [])
-        index_tools = {'beta', 'alpha', 'outperform_rate', 'correlation_with_index', 'tracking_error', 'information_ratio'}
+        
+        # 从 MCP 工具注册表中动态获取需要指数数据的工具
+        from mcp_server.executors import TOOL_FUNCTIONS
+        import inspect
+        
+        # 向量化：一次性构建需要指数数据的工具集合
+        index_tools = {
+            tool_name for tool_name, func in TOOL_FUNCTIONS.items()
+            if 'index_data' in inspect.signature(func).parameters
+        }
         
         # 兼容两种格式：{"name": "beta"} 和 {"tool": "beta"}
-        needs_index_data = False
-        for tool in tools_def:
-            tool_name = tool.get('name') or tool.get('tool')
-            if tool_name in index_tools:
-                needs_index_data = True
-                break
+        # 向量化：提取所有工具名并检查是否有交集
+        used_tool_names = {
+            tool.get('name') or tool.get('tool')
+            for tool in tools_def
+            if tool.get('name') or tool.get('tool')
+        }
+        needs_index_data = bool(used_tool_names & index_tools)
         
-        # 仅在需要指数数据且尚未提供时才加载
+        # 验证指数数据是否可用（已在 StockPoolService 中统一加载）
         if needs_index_data and index_data is None:
-            logger.info("📊 检测到指数相关性工具，自动加载指数数据...")
-            data = load_and_merge_index_data(data, stock_codes)
-        elif needs_index_data and index_data is not None:
-            logger.info(f"📊 使用已提供的指数数据，跳过重复加载")
+            logger.warning("[WARN] 需要使用指数工具，但指数数据未加载。请检查 StockPoolService 的指数数据加载是否正常。")
+            # 不自动重新加载，避免重复加载和数据不一致
 
         screener = StockScreener(data, stock_codes=stock_codes, index_data=index_data)
         
         # 限制最大迭代次数，避免 Agent 无限重试
         max_internal_iterations = 3
         if call_iteration > max_internal_iterations:
-            logger.warning(f"⚠️ 已达到最大内部迭代次数 ({max_internal_iterations})，停止重试")
+            logger.warning(f"[WARN] 已达到最大内部迭代次数 ({max_internal_iterations})，停止重试")
             logger.warning(f"   原因：连续 {call_iteration} 次筛选未能找到合适股票")
             logger.warning(f"   建议：大幅放宽筛选条件或更换策略方向")
             return json.dumps({
@@ -133,7 +150,7 @@ def create_run_screening(
         
         # 如果筛选成功且有候选股票，重置计数器避免后续误判
         if candidates:
-            logger.info(f"✅ 筛选成功，找到 {len(candidates)} 只候选股票，重置调用计数器")
+            logger.info(f"[OK] 筛选完成：返回 Top {len(candidates)} 只股票（物理匹配数见上方日志）")
             _run_screening_call_count = 0
 
         return json.dumps(result, ensure_ascii=False, default=str)

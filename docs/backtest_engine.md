@@ -306,8 +306,8 @@ start_date = screening_date - (observation_days + 60)
 ```python
 # 引擎包装 screen_with_data 函数
 def patched_screen_with_data(data, top_n=20, screening_date=None):
-    screener = StockScreener(data, screening_date=screening_date, index_data=index_data)
-    return screener.execute_screening(...)
+    executor = create_screening_executor(data, screening_date=screening_date, index_data=index_data)
+    return executor.run_screening(...)
 
 module.screen_with_data = patched_screen_with_data
 ```

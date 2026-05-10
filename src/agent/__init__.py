@@ -10,6 +10,7 @@ Screener DeepAgent - 股票筛选智能体模块
 - tools: MCP 工具和 Bridge 工具管理
 - context: Skills 管理
 - memory: 跨会话持久化
+- interactive: 交互式筛选编辑器
 """
 
 from src.agent.core.agent_factory import create_screener_agent
@@ -19,6 +20,7 @@ from src.agent.memory.long_term import LongTermMemory
 from src.agent.core.orchestrator import ScreenerOrchestrator
 from src.agent.tools.provider import ScreenerToolProvider
 from src.agent.core.subagent import BaseSubAgent, AgentOrchestrator
+from src.agent.interactive import InteractiveConditionEditor, InteractiveModeManager
 from datahub import get_available_industries
 from datahub.loaders import StockDataLoader
 from infrastructure.config.settings import get_settings
@@ -36,6 +38,8 @@ __all__ = [
     "ScreenerOrchestrator",
     "BaseSubAgent",
     "AgentOrchestrator",
+    "InteractiveConditionEditor",
+    "InteractiveModeManager",
     "get_settings",
     "_check_api_key",
     "_is_screening_successful",

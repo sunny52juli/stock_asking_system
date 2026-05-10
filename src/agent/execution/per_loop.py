@@ -1,4 +1,4 @@
-"""Plan-Execute-Reflect 循环 - 智能任务执行与反思."""
+﻿"""Plan-Execute-Reflect 循环 - 智能任务执行与反思."""
 
 from __future__ import annotations
 
@@ -108,7 +108,7 @@ class PlanExecuteReflectLoop:
         while iteration < self.max_iterations:
             iteration += 1
             logger.info(f"\n{'=' * 60}")
-            logger.info(f"📊 迭代 {iteration}/{self.max_iterations}")
+            logger.info(f"[DATA] 迭代 {iteration}/{self.max_iterations}")
             logger.info(f"{'=' * 60}")
             
             # Phase 1: Execute
@@ -122,7 +122,7 @@ class PlanExecuteReflectLoop:
             needs_revision = any(r.needs_revision for r in reflections.values())
             
             if not needs_revision:
-                logger.info("\n✅ 所有任务达到质量标准，无需修订")
+                logger.info("\n[OK] 所有任务达到质量标准，无需修订")
                 break
             
             # Phase 4: Revise plan
@@ -130,14 +130,14 @@ class PlanExecuteReflectLoop:
             plan = self._revise_plan(plan, reflections, results)
             
             if not plan.tasks:
-                logger.info("⚠️  修订后无任务可执行，退出循环")
+                logger.info("[WARN]  修订后无任务可执行，退出循环")
                 break
         
         # Generate final summary
         summary = self._generate_summary(final_results, reflections, iteration)
         
         logger.info(f"\n{'=' * 60}")
-        logger.info("✅ Plan-Execute-Reflect 循环完成")
+        logger.info("[OK] Plan-Execute-Reflect 循环完成")
         logger.info(f"   总迭代: {iteration}")
         logger.info(f"   成功任务: {sum(1 for r in final_results.values() if r.success)}")
         logger.info(f"   平均质量: {summary.get('avg_quality', 0):.2f}")
@@ -170,7 +170,7 @@ class PlanExecuteReflectLoop:
             
             # Check dependencies
             if not self._dependencies_met(task, results):
-                logger.warning(f"⚠️  任务 {task_id} 的依赖未满足，跳过")
+                logger.warning(f"[WARN]  任务 {task_id} 的依赖未满足，跳过")
                 results[task_id] = ExecutionResult(
                     task_id=task_id,
                     success=False,
@@ -192,11 +192,11 @@ class PlanExecuteReflectLoop:
                 results[task_id] = result
                 task.status = "completed" if result.success else "failed"
                 
-                status_icon = "✅" if result.success else "❌"
+                status_icon = "[OK]" if result.success else "[ERROR]"
                 logger.info(f"{status_icon} 任务 {task_id} 完成 (耗时: {elapsed:.2f}s)")
                 
             except Exception as e:
-                logger.exception(f"❌ 任务 {task_id} 执行异常: {e}")
+                logger.exception(f"[ERROR] 任务 {task_id} 执行异常: {e}")
                 results[task_id] = ExecutionResult(
                     task_id=task_id,
                     success=False,
@@ -241,7 +241,7 @@ class PlanExecuteReflectLoop:
                 reflection = reflect_func(task_id, result)
                 reflections[task_id] = reflection
                 
-                quality_icon = "✅" if reflection.quality_score >= self.quality_threshold else "⚠️"
+                quality_icon = "[OK]" if reflection.quality_score >= self.quality_threshold else "[WARN]"
                 logger.info(
                     f"  {quality_icon} 任务 {task_id}: 质量={reflection.quality_score:.2f}"
                 )
@@ -251,7 +251,7 @@ class PlanExecuteReflectLoop:
                     logger.info(f"     建议: {reflection.suggestions[:2]}")
                     
             except Exception as e:
-                logger.warning(f"⚠️  任务 {task_id} 反思失败: {e}")
+                logger.warning(f"[WARN]  任务 {task_id} 反思失败: {e}")
                 reflections[task_id] = Reflection(
                     task_id=task_id,
                     quality_score=0.5,
@@ -317,7 +317,7 @@ class PlanExecuteReflectLoop:
             execution_order=new_execution_order,
         )
         
-        logger.info(f"✅ 修订计划创建完成: {len(revised_tasks)} 个新任务")
+        logger.info(f"[OK] 修订计划创建完成: {len(revised_tasks)} 个新任务")
         
         return revised_plan
     

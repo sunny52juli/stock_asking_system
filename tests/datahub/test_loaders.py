@@ -21,7 +21,7 @@ from datahub.loaders.stock_loader import (
     load_latest_market_data,
 )
 from datahub.registry import stock as stock_registry
-from datahub.registry.stock import DatasetRegistry
+from datahub.core.dataset import DatasetRegistry
 class TestBaseDataLoader:
     """测试 BaseDataLoader 基类功能。"""
     

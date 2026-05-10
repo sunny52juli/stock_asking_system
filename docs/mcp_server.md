@@ -218,23 +218,21 @@ ir = information_ratio(data, stock_col='close', index_col='index_close', window=
 ```python
 # 筛选低 Beta、高 Alpha 的优质股票
 screening_logic = {
-    "name": "稳健阿尔法策略",
-    "tools_definition": [
-        {"name": "beta", "params": {"window": 60}},
-        {"name": "alpha", "params": {"window": 60}},
-    ],
     "expression": "(beta < 1.0) & (alpha > 0)",
-    "confidence": "rank_normalize(alpha) * 0.7 + rank_normalize(1/beta) * 0.3"
+    "tools": [
+        {"tool": "beta", "params": {"window": 60}, "var": "beta"},
+        {"tool": "alpha", "params": {"window": 60}, "var": "alpha"}
+    ],
+    "confidence_formula": "rank_normalize(alpha) * 0.7 + rank_normalize(1/beta) * 0.3"
 }
 
 # 筛选高信息比率的股票
 screening_logic = {
-    "name": "高信息比率策略",
-    "tools_definition": [
-        {"name": "information_ratio", "params": {"window": 60}},
-    ],
     "expression": "information_ratio > 0.5",
-    "confidence": "rank_normalize(information_ratio)"
+    "tools": [
+        {"tool": "information_ratio", "params": {"window": 60}, "var": "information_ratio"}
+    ],
+    "confidence_formula": "rank_normalize(information_ratio)"
 }
 ```
 

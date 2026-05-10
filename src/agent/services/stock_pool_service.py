@@ -14,8 +14,8 @@ from typing import Any
 import polars as pl
 
 from datahub import Calendar
+from datahub.loaders import load_raw_market_data
 from infrastructure.logging.logger import get_logger
-from src.agent.initialization.data_loader import DataLoader
 from src.screening.industry_matcher import IndustryMatcher
 from src.screening.stock_pool_filter import StockPoolFilter
 from utils.agent.llm_helper import build_llm_from_api_config
@@ -46,80 +46,54 @@ class StockPoolService:
         Returns:
             (过滤后的DataFrame, 过滤后的股票代码列表, 指数数据DataFrame)
         """
-        # 如果未提供数据，则自动加载
+        # 1. 加载或验证原始数据
         if raw_data is None:
-            logger.info("📊 StockPoolService 正在加载原始市场数据...")
-            data_loader = DataLoader(self.settings)
-            raw_data, stock_codes, index_data = data_loader.load_raw_market_data()
+            logger.info("[DATA] StockPoolService 正在加载原始市场数据...")
             
-            # 如果 index_data 为空，尝试单独加载指数数据
-            if index_data is None or (hasattr(index_data, 'is_empty') and index_data.is_empty()):
-                logger.warning("⚠️ 指数数据为空，尝试重新加载...")
-                try:
-                    # 使用 DataLoader 实例的方法加载指数数据
-                    index_data = data_loader._load_index_data(raw_data)
-                    if index_data is not None:
-                        logger.info(f"✅ 成功加载指数数据: {len(index_data)} 条记录")
-                    else:
-                        logger.error("❌ 指数数据加载失败，将使用空指数数据")
-                except Exception as e:
-                    logger.error(f"❌ 指数数据重新加载失败: {e}")
-                    logger.debug(traceback.format_exc())
+            # 获取最新交易日期
+            calendar = Calendar()
+            today = datetime.now().strftime("%Y%m%d")
+            latest_trade_date = calendar.get_latest_trade_date(today)
+            if not latest_trade_date:
+                latest_trade_date = today
             
-            logger.info(f"✅ 已加载 {len(raw_data)} 条记录，{len(stock_codes)} 只股票")
+            # 计算数据起始日期
+            from datahub.calendar_utils import get_data_start_date
+            observation_days = self.settings.observation_days
+            start_date = get_data_start_date(latest_trade_date, observation_days=observation_days)
+            
+            # 加载原始市场数据
+            raw_data = load_raw_market_data(
+                start_date=start_date,
+                end_date=latest_trade_date,
+                exclude_st=False,
+                min_list_days=0,
+            )
+            
+            logger.info(f"[OK] 已加载 {len(raw_data)} 条记录")
         else:
-            # 从传入的数据中提取信息（回测模式）
-            index_data = None
+            # 从传入的数据中提取日期范围（Polars）
+            dates = raw_data.select(pl.col("trade_date").unique()).to_series()
             
-            # 需要单独加载指数数据
-            logger.info("📊 回测模式：需要单独加载指数数据...")
-            try:
-                # 从 raw_data 中提取股票代码和日期范围
-                if hasattr(raw_data, 'filter') and not hasattr(raw_data, 'loc'):
-                    # Polars
-                    stock_codes_list = raw_data.select(pl.col("ts_code").unique()).to_series().to_list()
-                    dates = raw_data.select(pl.col("trade_date").unique()).to_series()
-                else:
-                    # Pandas
-                    stock_codes_list = raw_data.index.get_level_values('ts_code').unique().tolist()
-                    dates = raw_data.index.get_level_values('trade_date').unique()
-                
-                if len(dates) > 0 and stock_codes_list:
-                    start_date = str(dates.min()).replace('-', '')[:8]
-                    end_date = str(dates.max()).replace('-', '')[:8]
-                    
-                    data_loader = DataLoader(self.settings)
-                    index_data = data_loader._load_index_data(stock_codes_list, start_date, end_date)
-                    
-                    if index_data is not None and not (hasattr(index_data, 'is_empty') and index_data.is_empty()):
-                        logger.info(f"✅ 成功加载指数数据: {len(index_data)} 条记录")
-                    else:
-                        logger.warning("⚠️ 指数数据加载返回空结果")
-                        index_data = None
-                else:
-                    logger.warning("⚠️ 无法从 raw_data 中提取股票代码或日期范围")
-            except Exception as e:
-                logger.error(f"❌ 指数数据加载失败: {e}")
-                logger.debug(traceback.format_exc())
-                index_data = None
+            if len(dates) > 0:
+                latest_trade_date = str(dates.max()).replace('-', '')[:8]
+            else:
+                raise ValueError("无法从 raw_data 中提取交易日期")
         
-        # 获取最新交易日期
-        
-        calendar = Calendar()
-        today = datetime.now().strftime("%Y%m%d")
-        latest_trade_date = calendar.get_latest_trade_date(today)
-        
-        if not latest_trade_date:
-            latest_trade_date = today
+        # 2. 统一加载指数数据（所有模式都需要）
+        index_data = self._load_index_data_from_raw(raw_data)
         
         # 从 raw_data 中提取价格数据（已经是 MultiIndex 格式）
-        df_price = self._extract_basic_info(raw_data)
-        logger.info(f"📊 使用已加载的价格数据：{len(df_price)} 条记录")
+        df_price = raw_data.clone()
+        logger.info(f"[DATA] 使用已加载的价格数据：{len(df_price)} 条记录")
         
         # 加载股票基本信息（用于 ST、上市天数等过滤）
-        logger.info(f"📊 加载股票基本信息...")
-        data_loader = DataLoader(self.settings)
-        basic_df = data_loader._load_basic_info()
+        logger.info(f"[DATA] 加载股票基本信息...")
+        from datahub import Stock
+        stock = Stock()
+        basic_df = stock.universe()
+        if basic_df is None or basic_df.is_empty():
+            raise ValueError("无法获取股票基本信息")
         
         # 1. 基础过滤（ST、停牌、上市天数）
         stock_codes = self._filter_stock_pool_basic(
@@ -127,7 +101,7 @@ class StockPoolService:
             basic_df=basic_df,
             latest_trade_date=latest_trade_date,
         )
-        logger.info(f"📊 基础过滤后：{len(stock_codes)} 只股票")
+        logger.info(f"[DATA] 基础过滤后：{len(stock_codes)} 只股票")
         
         # 2. 行业过滤（LLM 智能匹配）
         if self.settings.stock_pool.industry:
@@ -139,27 +113,22 @@ class StockPoolService:
         
         if not df_filtered.is_empty() and "ts_code" in df_filtered.columns:
             stock_codes = df_filtered["ts_code"].drop_nulls().unique().to_list()
-            logger.info(f"📊 价格/流动性过滤后：{len(stock_codes)} 只股票")
+            logger.info(f"[DATA] 价格/流动性过滤后：{len(stock_codes)} 只股票")
         
         # 4. 市值过滤
         stock_codes = pool_filter._filter_market_value(df_filtered, stock_codes)
-        logger.info(f"📊 市值过滤后：{len(stock_codes)} 只股票")
+        logger.info(f"[DATA] 市值过滤后：{len(stock_codes)} 只股票")
         
         # 5. 数据完整性过滤
         stock_codes = pool_filter.filter_by_completeness(df_filtered, stock_codes)
-        logger.info(f"📊 完整性过滤后：{len(stock_codes)} 只股票")
+        logger.info(f"[DATA] 完整性过滤后：{len(stock_codes)} 只股票")
         
         # 过滤到最终股票池
         filtered_data = df_filtered.filter(pl.col("ts_code").is_in(stock_codes))
         
-        # 确保 index_data 不为 None
+        # index_data 可能为 None（指数数据加载失败），由调用方决定如何处理
         if index_data is None:
-            logger.warning("⚠️ 指数数据为 None，创建空 DataFrame")
-            index_data = pl.DataFrame({
-                "index_code": [],
-                "trade_date": [],
-                "close": []
-            })
+            logger.warning("[WARN] 指数数据加载失败，返回 None。使用指数相关工具时将无法正常工作。")
         
         return filtered_data, stock_codes, index_data
     
@@ -186,9 +155,14 @@ class StockPoolService:
         
         # 排除 ST 股票
         if self.settings.stock_pool.exclude_st:
-            st_mask = basic_df["name"].str.contains(r"ST|\*ST").fill_null(False)
+            # 修复：使用 ^ 锚定开头，避免误匹配名称中包含 "ST" 的正常股票
+            # 匹配规则：以 "ST" 或 "*ST" 开头的股票名称
+            st_mask = basic_df["name"].str.contains(r"^\*?ST").fill_null(False)
             filtered_df = basic_df.filter(~st_mask)
             stock_codes = filtered_df["ts_code"].drop_nulls().unique().to_list()
+            removed_count = len(basic_df) - len(filtered_df)
+            if removed_count > 0:
+                logger.info(f"   [OK] ST股票过滤：-{removed_count} 只，剩余 {len(stock_codes)} 只")
         
         # 排除停牌股票（vol=0）
         if not data.is_empty() and "vol" in data.columns:
@@ -197,37 +171,142 @@ class StockPoolService:
                 active_stocks = latest_date_data.filter(pl.col("vol") > 0).select("ts_code").unique().to_series().to_list()
                 stock_codes = [code for code in stock_codes if code in active_stocks]
         
-        # 排除上市天数不足的股票
+        # 排除上市天数不足的股票（向量化操作）
         min_list_days = self.settings.stock_pool.min_list_days
         if min_list_days > 0 and "list_date" in basic_df.columns:
             cutoff_date = datetime.strptime(latest_trade_date, "%Y%m%d")
-            valid_codes = []
-            for code in stock_codes:
-                row = basic_df.filter(pl.col("ts_code") == code)
-                if not row.is_empty():
-                    list_date_str = row.select("list_date").to_series().to_list()[0]
-                    if isinstance(list_date_str, str):
-                        try:
-                            list_date = datetime.strptime(list_date_str, "%Y%m%d")
-                            days_listed = (cutoff_date - list_date).days
-                            if days_listed >= min_list_days:
-                                valid_codes.append(code)
-                        except ValueError:
-                            pass
-            stock_codes = valid_codes
+            
+            # 向量化计算上市天数
+            filtered_df = basic_df.with_columns(
+                pl.col("list_date").str.strptime(pl.Date, format="%Y%m%d").alias("list_date_parsed")
+            ).with_columns(
+                ((pl.lit(cutoff_date) - pl.col("list_date_parsed")).dt.total_days()).alias("days_listed")
+            ).filter(
+                pl.col("days_listed") >= min_list_days
+            )
+            
+            stock_codes = filtered_df["ts_code"].drop_nulls().unique().to_list()
         
         return stock_codes
     
-    def _extract_basic_info(self, data: pl.DataFrame) -> pl.DataFrame:
-        """从数据中提取基本信息.
+    def _load_index_data_from_raw(self, raw_data: pl.DataFrame) -> pl.DataFrame | None:
+        """从原始数据中自动加载指数数据.
         
         Args:
-            data: 市场数据 DataFrame（polars）
+            raw_data: 原始市场数据 DataFrame
             
         Returns:
-            基本信息 DataFrame
+            指数数据 DataFrame，或 None
         """
-        return data.clone()
+        try:
+            # 提取日期范围（Polars）
+            dates = raw_data.select(pl.col("trade_date").unique()).to_series()
+            
+            if len(dates) == 0:
+                logger.warning("[WARN] 无法从 raw_data 中提取日期")
+                return None
+            
+            start_date = str(dates.min()).replace('-', '')[:8]
+            end_date = str(dates.max()).replace('-', '')[:8]
+            
+            # 根据股票代码推导需要加载的指数代码
+            stock_codes = raw_data.select(pl.col("ts_code").unique()).to_series().to_list()
+            index_codes = self._derive_index_codes(stock_codes)
+            
+            logger.info(f"[DATA] 正在加载指数数据 ({start_date} ~ {end_date})...")
+            index_data = self._load_index_data(index_codes, start_date, end_date)
+            
+            if index_data is not None and not index_data.is_empty():
+                logger.info(f"[OK] 成功加载指数数据: {len(index_data)} 条记录")
+            else:
+                logger.warning("[WARN] 指数数据加载返回空结果")
+                index_data = None
+            
+            return index_data
+            
+        except Exception as e:
+            logger.error(f"[ERROR] 指数数据加载失败: {e}")
+            logger.debug(traceback.format_exc())
+            return None
+    
+    def _derive_index_codes(self, stock_codes: list[str]) -> list[str]:
+        """根据股票代码推导对应的指数代码列表.
+        
+        Args:
+            stock_codes: 股票代码列表
+            
+        Returns:
+            去重后的指数代码列表
+        """
+        from datahub.domain.index_selector import get_index_code
+        
+        if not stock_codes:
+            return []
+        
+        # 使用 Polars map_elements 批量获取指数代码
+        stock_df = pl.DataFrame({"ts_code": stock_codes})
+        stock_with_index = stock_df.with_columns(
+            pl.col("ts_code").map_elements(get_index_code, return_dtype=pl.Utf8).alias("index_code")
+        )
+        
+        # 分组统计
+        index_stock_map = {}
+        for idx_code, group_df in stock_with_index.group_by("index_code"):
+            # Polars group_by 返回的 key 可能是 tuple，需要转换为字符串
+            if isinstance(idx_code, tuple):
+                idx_code = idx_code[0]
+            codes = group_df["ts_code"].to_list()
+            index_stock_map[idx_code] = codes
+        
+        logger.info(f"[DATA] 检测到 {len(index_stock_map)} 个指数板块")
+        
+        return list(index_stock_map.keys())
+    
+    def _load_index_data(self, index_codes: list[str], start_date: str, end_date: str) -> pl.DataFrame | None:
+        """加载指数数据.
+        
+        Args:
+            index_codes: 指数代码列表
+            start_date: 起始日期
+            end_date: 结束日期
+            
+        Returns:
+            指数数据 DataFrame (polars)，或 None
+        """
+        try:
+            from datahub import Index
+            
+            if not index_codes:
+                logger.warning("[WARN] 指数代码列表为空")
+                return None
+            
+            # 加载所有需要的指数数据
+            from datahub import Index
+            
+            # 使用默认配置（从 .env 自动读取）
+            index = Index()
+            
+            # 使用 batch_level 批量加载（内部已实现缓存和并行）
+            combined_data = index.batch_level(
+                index_codes=index_codes,
+                start_date=start_date,
+                end_date=end_date,
+                freq="daily",
+            )
+            
+            if combined_data is None or combined_data.is_empty():
+                logger.warning("[WARN] 所有指数数据均为空")
+                return None
+            
+            logger.info(f"[OK] 成功加载指数数据: {len(combined_data)} 条记录, {len(index_codes)} 个指数")
+            return combined_data
+            
+        except Exception as e:
+            logger.error(f"[ERROR] 加载指数数据失败: {e}")
+            logger.debug(traceback.format_exc())
+            return None
+    
+
     
     def _apply_industry_filter(
         self, 
@@ -245,64 +324,48 @@ class StockPoolService:
         Returns:
             过滤后的股票代码列表
         """
-        logger.info(f"🎯 开始行业过滤，配置的行业：{self.settings.stock_pool.industry}")
+        logger.info(f"[TARGET] 开始行业过滤，配置的行业：{self.settings.stock_pool.industry}")
         
         # 提取行业信息
-        basic_df = self._extract_basic_info(raw_data)
+        basic_df = raw_data.clone()
         if "industry" not in basic_df.columns:
-            logger.warning("⚠️ 数据中缺少 industry 列，跳过行业过滤")
+            logger.warning("[WARN] 数据中缺少 industry 列，跳过行业过滤")
             return stock_codes
         
-        # 从 basic_df 中提取行业映射
-        # Polars: unique() 代替 drop_duplicates()
-        if hasattr(basic_df, 'unique'):
-            industry_map = basic_df.select(["ts_code", "industry"]).unique(subset=["ts_code"], keep="first")
-            industry_map = industry_map.rename({"industry": "industry_name"})
-        else:
-            industry_map = basic_df[["ts_code", "industry"]].drop_duplicates("ts_code", keep="first")
-            industry_map = industry_map.rename(columns={"industry": "industry_name"})
+        # 从 basic_df 中提取行业映射（Polars）
+        industry_map = basic_df.select(["ts_code", "industry"]).unique(subset=["ts_code"], keep="first")
+        industry_map = industry_map.rename({"industry": "industry_name"})
         
         # 将价格数据转换为普通 DataFrame（处理 MultiIndex）
-        df_price_flat = self._extract_basic_info(df_price)
+        df_price_flat = df_price.clone()
         
-        # 将行业信息合并到价格数据
+        # 将行业信息合并到价格数据（Polars join）
         if "ts_code" in df_price_flat.columns:
-            # Polars: join() 代替 merge()
-            if hasattr(df_price_flat, 'join') and not hasattr(df_price_flat, 'loc'):
-                df_with_industry = df_price_flat.join(industry_map, on="ts_code", how="left")
-            else:
-                df_with_industry = df_price_flat.merge(industry_map, on="ts_code", how="left")
+            df_with_industry = df_price_flat.join(industry_map, on="ts_code", how="left", suffix="_dup")
+            # 移除带 _dup 后缀的列
+            dup_cols = [col for col in df_with_industry.columns if col.endswith("_dup")]
+            if dup_cols:
+                df_with_industry = df_with_industry.drop(dup_cols)
         else:
-            logger.warning("⚠️ 价格数据中缺少 ts_code 列，跳过行业过滤")
+            logger.warning("[WARN] 价格数据中缺少 ts_code 列，跳过行业过滤")
             return stock_codes
         
         # 检查 industry 列是否存在
         if "industry_name" not in df_with_industry.columns:
-            logger.warning("⚠️ 合并后缺少 industry_name 列，跳过行业过滤")
+            logger.warning("[WARN] 合并后缺少 industry_name 列，跳过行业过滤")
             return stock_codes
         
         # 使用 LLM 匹配行业
         llm = build_llm_from_api_config(self.settings.llm.to_dict())
         matcher = IndustryMatcher(llm)
         
-        available_industries = df_with_industry["industry_name"]
-        if hasattr(available_industries, 'drop_nulls'):
-            available_industries = available_industries.drop_nulls().unique().to_list()
-        else:
-            available_industries = available_industries.dropna().unique().tolist()
+        available_industries = df_with_industry["industry_name"].drop_nulls().unique().to_list()
         matched_industries = matcher.match_industries(self.settings.stock_pool.industry, available_industries)
         
         if matched_industries:
-            # Polars: filter() + is_in() 代替布尔索引
-            if hasattr(df_with_industry, 'filter') and not hasattr(df_with_industry, 'loc'):
-                df_with_industry = df_with_industry.filter(pl.col("industry_name").is_in(matched_industries))
-            else:
-                df_with_industry = df_with_industry[df_with_industry["industry_name"].isin(matched_industries)]
-            ts_code_col = df_with_industry["ts_code"]
-            if hasattr(ts_code_col, 'drop_nulls'):
-                stock_codes = ts_code_col.drop_nulls().unique().to_list()
-            else:
-                stock_codes = ts_code_col.dropna().unique().tolist()
-            logger.info(f"✅ 行业过滤：{len(matched_industries)} 个行业，{len(stock_codes)} 只股票")
+            # Polars 过滤
+            df_with_industry = df_with_industry.filter(pl.col("industry_name").is_in(matched_industries))
+            stock_codes = df_with_industry["ts_code"].drop_nulls().unique().to_list()
+            logger.info(f"[OK] 行业过滤：{len(matched_industries)} 个行业，{len(stock_codes)} 只股票")
         
         return stock_codes

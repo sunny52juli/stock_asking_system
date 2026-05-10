@@ -1,4 +1,4 @@
-"""交易日历工具函数 - 日期计算、交易日查询等."""
+﻿"""交易日历工具函数 - 日期计算、交易日查询等."""
 
 from datetime import datetime, timedelta
 
@@ -45,7 +45,7 @@ def calculate_date_offset(screening_date: str, days: int, forward: bool = True) 
         else:
             # 交易日不足，扩大搜索范围
             logger.warning(
-                f"⚠️ 交易日历返回 {len(trade_dates)} 天，不足 {days} 天，扩大搜索范围"
+                f"[WARN] 交易日历返回 {len(trade_dates)} 天，不足 {days} 天，扩大搜索范围"
             )
             buffer = int(days * 2.0 + 30)
             candidate_dt = screening_dt - timedelta(days=buffer)

@@ -1,4 +1,4 @@
-"""Skills 注册中心 - 动态技能管理.
+﻿"""Skills 注册中心 - 动态技能管理.
 
 import re
 提供技能的自动发现、注册、版本管理和热重载功能。
@@ -99,7 +99,7 @@ class SkillRegistry:
         """
         skills_path = Path(skills_dir)
         if not skills_path.exists():
-            logger.warning(f"⚠️  技能目录不存在: {skills_path}")
+            logger.warning(f"[WARN]  技能目录不存在: {skills_path}")
             return 0
         
         loaded_count = 0
@@ -127,9 +127,9 @@ class SkillRegistry:
                     logger.debug(f"  ✓ 加载技能: {skill.metadata.name} v{skill.metadata.version}")
                     
                 except Exception as e:
-                    logger.error(f"❌ 加载技能失败 {skill_file}: {e}")
+                    logger.error(f"[ERROR] 加载技能失败 {skill_file}: {e}")
         
-        logger.info(f"✅ 已加载 {loaded_count} 个技能 ({len(self.categories)} 个分类)")
+        logger.info(f"[OK] 已加载 {loaded_count} 个技能 ({len(self.categories)} 个分类)")
         return loaded_count
     
     def get_skill(self, skill_name: str) -> Skill | None:
@@ -144,7 +144,7 @@ class SkillRegistry:
         skill = self.skills.get(skill_name)
         
         if skill and not skill.metadata.enabled:
-            logger.warning(f"⚠️  技能已禁用: {skill_name}")
+            logger.warning(f"[WARN]  技能已禁用: {skill_name}")
             return None
         
         return skill
@@ -202,7 +202,7 @@ class SkillRegistry:
             True 如果重载成功
         """
         if skill_name not in self.skills:
-            logger.error(f"❌ 技能不存在: {skill_name}")
+            logger.error(f"[ERROR] 技能不存在: {skill_name}")
             return False
         
         skill = self.skills[skill_name]
@@ -216,14 +216,14 @@ class SkillRegistry:
             return True
             
         except Exception as e:
-            logger.error(f"❌ 重载技能失败 {skill_name}: {e}")
+            logger.error(f"[ERROR] 重载技能失败 {skill_name}: {e}")
             return False
     
     def enable_skill(self, skill_name: str) -> bool:
         """启用技能."""
         if skill_name in self.skills:
             self.skills[skill_name].metadata.enabled = True
-            logger.info(f"✅ 技能已启用: {skill_name}")
+            logger.info(f"[OK] 技能已启用: {skill_name}")
             return True
         return False
     
@@ -231,7 +231,7 @@ class SkillRegistry:
         """禁用技能."""
         if skill_name in self.skills:
             self.skills[skill_name].metadata.enabled = False
-            logger.info(f"⚠️  技能已禁用: {skill_name}")
+            logger.info(f"[WARN]  技能已禁用: {skill_name}")
             return True
         return False
     

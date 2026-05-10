@@ -228,6 +228,91 @@ tools = [
 
 ### 置信度公式设计
 
+#### ⚠️ **强制要求：权重定义完整性**
+
+**Agent 只负责提供指标权重，不要生成复杂的计算公式！系统有固定的打分模式。**
+
+**推荐格式（新）**：使用 `confidence_weights` 字典
+```json
+{
+  "expression": "(beta_60 > 1.0) & (alpha_60 > 0)",
+  "confidence_weights": {
+    "beta_60": 0.5,
+    "alpha_60": 0.5
+  },
+  "tools": [
+    {"var": "beta_60", "tool": "beta", "params": {"window": 60}},
+    {"var": "alpha_60", "tool": "alpha", "params": {"window": 60}}
+  ]
+}
+```
+
+**兼容格式（旧）**：使用 `confidence_formula` 字符串
+```json
+{
+  "expression": "(beta_60 > 1.0) & (alpha_60 > 0)",
+  "confidence_formula": "rank_normalize(beta_60) * 0.5 + rank_normalize(alpha_60) * 0.5",
+  "tools": [
+    {"var": "beta_60", "tool": "beta", "params": {"window": 60}},
+    {"var": "alpha_60", "tool": "alpha", "params": {"window": 60}}
+  ]
+}
+```
+
+**规则**：
+1. **只包含需要打分的指标**：如果 `expression` 中有 `(beta_60 > 1.0) & (alpha_60 > 0)`，但您只想用这两个指标打分，则 `confidence_weights` 中只包含 `beta_60` 和 `alpha_60`
+2. **权重之和为 1**：系统会自动归一化，但你应该尽量使总和接近 1
+3. **对于反向指标**（如 `atr_14` 越小越好），在系统中会自动处理，你只需正常指定权重
+
+#### ❌ 错误示例：权重定义不完整
+
+```json
+{
+  "expression": "(beta_60 > 1.0) & (alpha_60 > 0) & (atr_14 < 5)",
+  "confidence_weights": {
+    "beta_60": 0.5
+  }
+}
+```
+
+**错误原因**：
+- 表达式中有 3 个指标：`beta_60`, `alpha_60`, `atr_14`
+- 但 `confidence_weights` 只定义了 `beta_60` 的权重
+- 缺少 `alpha_60` 和 `atr_14` 的权重定义
+- **系统会回退到等权分配，并给出警告**
+
+#### ✅ 正确示例：完整权重定义
+
+```json
+{
+  "expression": "(beta_60 > 1.0) & (alpha_60 > 0) & (atr_14 < 5)",
+  "confidence_weights": {
+    "beta_60": 0.4,
+    "alpha_60": 0.3,
+    "atr_14": 0.3
+  }
+}
+```
+
+**正确做法**：
+- 表达式中的 3 个指标都在 `confidence_weights` 中有权重定义
+- 权重之和 = 0.4 + 0.3 + 0.3 = 1.0
+- 简洁明了，无需关心归一化细节
+
+**❌ 错误做法**：
+```json
+// 错误 1：生成复杂的计算公式（系统会自动归一化）
+"confidence_formula": "beta_60 * 0.4 + (alpha_60 / 0.05) * 0.3"
+
+// 错误 2：包含未在 expression 中使用的指标
+"confidence_weights": {
+  "beta_60": 0.4,
+  "alpha_60": 0.3,
+  "atr_14": 0.3
+}
+// 如果 expression 是 "(beta_60 > 1.0) & (alpha_60 > 0)"，没有使用 atr_14，则不应纳入打分
+```
+
 #### ❌ 错误：直接使用原始值
 ```python
 # 错误：不同量纲的值不能直接加权
@@ -251,7 +336,9 @@ rank_normalize(1 - volatility_20d/volatility_ma60) * 0.6 + rank_normalize(excess
 - [ ] 是否使用了相对指标（与历史比、与指数比、分位数）？
 - [ ] **表达式中的所有变量是否都在 `tools` 列表中有定义？**
 - [ ] **是否没有在表达式中直接使用工具函数名（如 `rolling_mean()`）？**
-- [ ] 置信度公式是否使用了 `rank_normalize` 进行标准化？
+- [ ] **如果定义了 `confidence_weights`，是否为所有指标变量都指定了权重？**
+- [ ] **`confidence_weights` 中的权重之和是否接近 1？**
+- [ ] **是否只包含 expression 中使用的指标进行打分？**
 - [ ] 表达式是否能在不同市场环境下自适应？
 - [ ] 是否考虑了多个维度（波动、收益、趋势、估值）？
 

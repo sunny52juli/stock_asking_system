@@ -15,7 +15,7 @@ from src.agent.execution.agent_phases import execute_query_with_reflection
 from src.agent.execution.planner import TaskPlanner, get_planner
 from src.agent.execution.query_executor import QueryExecutor
 from src.agent.initialization.component_initializer import ComponentInitializer
-from src.agent.initialization.data_loader import DataLoader
+# 注意：DataLoader 已移除，直接使用 StockPoolService 和 datahub loaders
 from src.agent.quality.quality_evaluator import ScreeningQualityEvaluator
 from src.agent.quality.retry_manager import RetryManager, get_retry_manager
 project_root = Path(r"D:\code\QuantitativeSystem\stock_asking_system")
@@ -45,10 +45,12 @@ except ImportError as e:
 print()
 
 # 测试初始化模块
+# 注意：DataLoader 已移除
 try:
-    print("✅ src.agent.initialization.data_loader.DataLoader")
+    from src.agent.services.stock_pool_service import StockPoolService
+    print("✅ src.agent.services.stock_pool_service.StockPoolService (替代 DataLoader)")
 except ImportError as e:
-    print(f"❌ src.agent.initialization.data_loader.DataLoader: {e}")
+    print(f"❌ StockPoolService: {e}")
 
 try:
     print("✅ src.agent.initialization.component_initializer.ComponentInitializer")

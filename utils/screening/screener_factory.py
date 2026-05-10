@@ -10,14 +10,14 @@ from utils.screening.stock_screener import StockScreener
 from __future__ import annotations
 
 from typing import Any, Optional
-import pandas as pd
+import polars as pl
 
 
 def create_screener(
-    data: pd.DataFrame,
+    data: pl.DataFrame,
     screening_date: Optional[str] = None,
     stock_codes: Optional[list[str]] = None,
-    index_data: Optional[pd.DataFrame] = None,
+    index_data: Optional[pl.DataFrame] = None,
     mode: str = "agent",
 ):
     """创建筛选器实例.
@@ -45,6 +45,7 @@ def create_screener(
         return ScreeningExecutor(
             data=data,
             screening_date=screening_date,
+            index_data=index_data,
         )
     else:
         raise ValueError(f"不支持的模式: {mode}，请使用 'agent' 或 'backtest'")
@@ -52,12 +53,12 @@ def create_screener(
 
 # 便捷函数：Agent 筛选（最常用）
 def screen_stocks(
-    data: pd.DataFrame,
+    data: pl.DataFrame,
     screening_logic: dict,
-    top_n: int = 20,
+    top_n: int = 10,
     screening_date: Optional[str] = None,
     stock_codes: Optional[list[str]] = None,
-    index_data: Optional[pd.DataFrame] = None,
+    index_data: Optional[pl.DataFrame] = None,
     query: str = "",
     iteration: int = 1,
 ) -> list[dict[str, Any]]:

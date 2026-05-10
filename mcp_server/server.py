@@ -57,13 +57,22 @@ def main():
     
     args = parser.parse_args()
     
+    # 在 stdio 模式下，禁用所有 logging 输出到 stdout
+    if args.transport == "stdio":
+        import logging
+        # 将所有 logger 的输出重定向到 stderr 或禁用
+        logging.basicConfig(level=logging.CRITICAL, stream=sys.stderr)
+        # 禁用 root logger 的 handlers
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
+    
     server = create_server()
     
     if args.transport == "sse":
-        print(f"Starting MCP server on {args.host}:{args.port} (SSE)")
+        print(f"Starting MCP server on {args.host}:{args.port} (SSE)", file=sys.stderr)
         server.run(transport="sse", host=args.host, port=args.port)
     else:
-        print("Starting MCP server (stdio)")
+        # stdio 模式下不输出任何内容到 stdout，避免干扰 JSON-RPC 通信
         server.run(transport="stdio")
 
 
