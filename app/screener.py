@@ -29,6 +29,7 @@ from src.agent.core.orchestrator import ScreenerOrchestrator
 from src.agent.execution.state_manager import SessionStateManager
 from src.agent.interactive.mode_manager import InteractiveModeManager
 from src.agent.tools.strategy_detector import validate_and_suggest
+from src.agent.observability import get_observability
 from infrastructure.config.settings import get_settings
 from infrastructure.logging.logger import get_logger
 from utils.screening.interactive_helpers import (
@@ -48,6 +49,9 @@ def main():
         config_files=["screening_interactive.yaml", "stock_pool.yaml"], 
         project_root=PROJECT_ROOT
     )
+    
+    # 初始化观测系统（Telemetry + Long-term Memory）
+    obs = get_observability(enabled=True, project_root=PROJECT_ROOT)
     
     # 初始化会话状态管理器（支持跨查询数据复用）
     state_manager = SessionStateManager(settings)
@@ -156,6 +160,45 @@ def main():
                     candidates_saved = False  # 编辑后重置保存状态
                     continue
             
+            # [OK] 增强：在“是否保存当前策略”提示下，只允许 y/n/edit
+            if last_logic and not candidates_saved:
+                if query_lower in ['y', 'yes', '是', 'save']:
+                    # 用户输入了 y，执行保存逻辑
+                    if last_logic:
+                        script_path = save_strategy_script(
+                            last_logic, [], query, 
+                            state_manager, settings
+                        )
+                        candidates_saved = True
+                        obs.record_strategy(
+                            query=query,
+                            strategy_name=last_logic.get('strategy_name', 'saved_strategy'),
+                            screening_logic=last_logic,
+                            candidates_count=0,
+                            success=True
+                        )
+                        print(f"[OK] 策略已保存: {script_path}")
+                    continue
+                elif query_lower in ['n', 'no', '否', 'skip']:
+                    # 用户输入了 n，跳过保存
+                    candidates_saved = False
+                    continue
+                elif query_lower in ['edit', 'eidt', 'edti', 'edi']:
+                    # 用户想再次编辑
+                    new_query = interactive_manager.start_session(last_logic)
+                    if new_query:
+                        print(f"\n[INFO] 正在执行新查询: {new_query}")
+                        query = new_query
+                    else:
+                        last_logic = interactive_manager.get_current_logic()
+                        candidates_saved = False
+                    continue
+                else:
+                    # 无效输入，重新提示
+                    print(f"[WARN] 无效输入: '{query}'")
+                    print(f"   请输入 'y' 保存 | 'n' 跳过 | 'edit' 继续修改")
+                    continue
+            
             # [OK] 验证是否为有效的策略描述
             validation = validate_and_suggest(query)
             
@@ -173,8 +216,16 @@ def main():
             print(f"[MENU] 查询 #{query_count}: {query}")
             print(f"{'='*70}")
             
+            # [OK] 检查是否有相似的历史策略
+            suggestions = obs.get_strategy_suggestions(query.split()[0] if query.split() else query, limit=2)
+            if suggestions:
+                print(f"\n[MEMORY] 发现 {len(suggestions)} 个相似历史策略:")
+                for i, strategy in enumerate(suggestions, 1):
+                    print(f"   {i}. {strategy.strategy_name} - {strategy.query[:60]}")
+            
             # 执行筛选（自动复用缓存）
-            result = orchestrator.execute_query(query, query_count)
+            with obs.trace_query(query, query_id=query_count) as trace_record:
+                result = orchestrator.execute_query(query, query_count)
             
             # 显示结果
             # [OK] 关键修复：只要有候选股票就视为成功，无论 success 字段
@@ -240,11 +291,22 @@ def main():
                             # 保存策略脚本
                             if candidates:
                                 if last_logic:
-                                    save_strategy_script(
+                                    script_path = save_strategy_script(
                                         last_logic, candidates, query, 
                                         state_manager, settings
                                     )
                                     candidates_saved = True  # 标记已保存
+                                    
+                                    # [OK] 记录到长期记忆
+                                    strategy_name = last_logic.get('strategy_name', f'strategy_{query_count}')
+                                    obs.record_strategy(
+                                        query=query,
+                                        strategy_name=strategy_name,
+                                        screening_logic=last_logic,
+                                        candidates_count=len(candidates),
+                                        success=True
+                                    )
+                                    obs.record_query_result(query, success=True, script_path=script_path)
                                 else:
                                     print("[WARN] 没有可保存的策略逻辑")
                             else:
@@ -275,6 +337,8 @@ def main():
                     # 既没有候选股票也没有筛选逻辑
                     print(f"\n[WARN] 本次查询未生成有效策略")
                     print(f"   建议: 尝试更明确的查询描述")
+                    # 记录失败
+                    obs.record_query_result(query, success=False)
             else:
                 # [OK] 增强：详细错误诊断
                 if result is None:
@@ -318,7 +382,11 @@ def main():
             import traceback
             traceback.print_exc()
     
+    # 打印会话摘要
+    obs.print_summary()
+    
     # 清理资源
+    obs.close()
     state_manager.cleanup()
 
 

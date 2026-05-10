@@ -162,24 +162,28 @@ class InteractiveModeManager:
             self._save_to_session()
             
             # [OK] 如果带回了新查询，则不提示保存（因为马上要执行新任务）
+            # [OK] 修复：如果是 quit/exit 命令退出，也不提示保存
             if not new_query and self.editor and self.editor.current_state:
-                print("\n" + "="*70)
-                save_choice = input("💾 是否保存当前编辑的策略脚本？(y/n): ").strip().lower()
-                if save_choice in ['y', 'yes', '是']:
-                    script_name = input("请输入策略名称 (直接回车使用默认名): ").strip()
-                    if not script_name:
-                        script_name = self.editor.current_state.logic.get('name', '未命名策略')
-                    
-                    # 调用编排器的保存功能
-                    candidates = self._create_executor_func()(self.editor.current_state.logic)
-                    from utils.screening.interactive_helpers import save_strategy_script
-                    save_strategy_script(
-                        self.editor.current_state.logic, 
-                        candidates, 
-                        script_name,
-                        self.state_manager,
-                        self.orchestrator.settings
-                    )
+                # 检查是否是 quit/exit 退出
+                last_command = getattr(self.editor, '_last_command', '').lower()
+                if last_command not in ['quit', 'exit', 'q']:
+                    print("\n" + "="*70)
+                    save_choice = input("💾 是否保存当前编辑的策略脚本？(y/n): ").strip().lower()
+                    if save_choice in ['y', 'yes', '是']:
+                        script_name = input("请输入策略名称 (直接回车使用默认名): ").strip()
+                        if not script_name:
+                            script_name = self.editor.current_state.logic.get('name', '未命名策略')
+                        
+                        # 调用编排器的保存功能
+                        candidates = self._create_executor_func()(self.editor.current_state.logic)
+                        from utils.screening.interactive_helpers import save_strategy_script
+                        save_strategy_script(
+                            self.editor.current_state.logic, 
+                            candidates, 
+                            script_name,
+                            self.state_manager,
+                            self.orchestrator.settings
+                        )
         
         return new_query
     

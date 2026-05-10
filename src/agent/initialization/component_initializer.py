@@ -8,7 +8,7 @@ from typing import Any
 
 from infrastructure.logging.logger import get_logger
 from src.agent.context.skill_registry import SkillRegistry
-from src.agent.memory.long_term import LongTermMemory
+from src.agent.memory import GraphDatabaseMemory
 from src.agent.tools.bridge import create_bridge_tools
 from src.agent.tools.provider import ScreenerToolProvider
 from utils.agent.llm_helper import build_llm_from_api_config
@@ -175,7 +175,19 @@ class ComponentInitializer:
             logger.warning(f"   project_root: {self.project_root}")
         
         logger.info("初始化 Long-term Memory...")
-        self.long_term_memory = LongTermMemory(self.project_root / ".stock_asking" / "memory.db")
+        
+        # 使用环境变量配置 Neo4j
+        import os
+        neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+        neo4j_username = os.getenv("NEO4J_USERNAME", "neo4j")
+        neo4j_password = os.getenv("NEO4J_PASSWORD", "neo4j")
+        
+        self.long_term_memory = GraphDatabaseMemory(
+            uri=neo4j_uri,
+            username=neo4j_username,
+            password=neo4j_password,
+            auto_start=False
+        )
         logger.info("[OK] Skills 和 Memory 初始化完成")
     
     def create_agent(self, llm, tool_provider, skill_registry, long_term_memory, query: str | None = None):
@@ -192,7 +204,7 @@ class ComponentInitializer:
             (agent, initial_files) 元组
         """
         
-        logger.info(f"创建 Agent (deep_thinking={self.settings.harness.deep_thinking})...")
+        logger.info("创建 Agent...")
         
         # 使用 .stock_asking/skills 作为 Skills 目录
         skills_dir = self.project_root / ".stock_asking" / "skills"
@@ -203,7 +215,6 @@ class ComponentInitializer:
             skill_registry=skill_registry,
             long_term_memory=long_term_memory,
             skills_dir=skills_dir,
-            deep_thinking=self.settings.harness.deep_thinking,
             query=query,
             rules_dict=self.rules,  # 注入 Rules 到 System Prompt
         )

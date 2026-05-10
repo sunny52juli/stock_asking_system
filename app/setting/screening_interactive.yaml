@@ -27,7 +27,6 @@ output:
 
 # Agent 约束框架（Harness）- 三大核心组件
 harness:
-  deep_thinking: true              # 深度思考模式（true=详细分析，false=快速响应）
   max_iterations: 3                # 最大迭代次数
   max_consecutive_errors: 2        # 最大连续错误次数
   max_execution_time: 30         # 最大执行时间 (秒)
@@ -42,12 +41,14 @@ harness:
           - type: command
             command: "python .stock_asking/hooks/tool-call-validator.py"
     
-    # 工具调用后检查（PostToolUse）- 验证阈值合理性
+    # 工具调用后检查（PostToolUse）- 验证阈值合理性和权重完整性
     PostToolUse:
       - matcher: "run_screening"
         hooks:
           - type: command
             command: "python hooks/validate-thresholds.py"
+          - type: command
+            command: "python hooks/validate-confidence-weights.py"
     
     # Agent 会话结束时的质量门禁（Stop）
     Stop:

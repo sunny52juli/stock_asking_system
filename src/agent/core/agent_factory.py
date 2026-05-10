@@ -40,18 +40,13 @@ class AgentFactory:
         Returns:
             (Agent实例, initial_files)
         """
-        # Deep Mode: Agent已预创建，直接返回
-        if self.settings.harness.deep_thinking and self.agent:
-            logger.debug("Reusing pre-created deep thinking agent")
-            return self.agent, self.initial_files
-        
-        # Quick Mode: 检查是否可以复用
-        if not self.settings.harness.deep_thinking and self.agent:
-            logger.debug("Reusing quick mode agent")
+        # Agent已预创建，直接返回
+        if self.agent:
+            logger.debug("Reusing pre-created agent")
             return self.agent, self.initial_files
         
         # 创建新Agent
-        logger.info(f"Creating new agent (deep_thinking={self.settings.harness.deep_thinking})...")
+        logger.info("Creating new agent...")
         
         # 交互式模式：动态创建所需组件
         if bridge_tools:
@@ -89,7 +84,7 @@ class AgentFactory:
         """
         from src.agent.tools.provider import ScreenerToolProvider
         from src.agent.context.skill_registry import SkillRegistry
-        from src.agent.memory.long_term import LongTermMemory
+        from src.agent.memory import GraphDatabaseMemory
         
         # 动态创建LLM（如果尚未创建）
         if not component_initializer.llm:
@@ -107,9 +102,18 @@ class AgentFactory:
         tool_provider = ScreenerToolProvider(mcp_tools=[], bridge_tools=bridge_tools)
         skill_registry = SkillRegistry()
         
-        # 使用项目根目录下的memory.db
-        db_path = Path(__file__).resolve().parent.parent.parent.parent / ".stock_asking" / "memory.db"
-        long_term_memory = LongTermMemory(db_path=db_path)
+        # 使用环境变量配置 Neo4j
+        import os
+        neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+        neo4j_username = os.getenv("NEO4J_USERNAME", "neo4j")
+        neo4j_password = os.getenv("NEO4J_PASSWORD", "neo4j")
+        
+        long_term_memory = GraphDatabaseMemory(
+            uri=neo4j_uri,
+            username=neo4j_username,
+            password=neo4j_password,
+            auto_start=False
+        )
         
         return {
             "tool_provider": tool_provider,
@@ -134,11 +138,10 @@ def create_screener_agent(
     skill_registry,
     long_term_memory,
     skills_dir=None,
-    deep_thinking=False,
     query=None,
     rules_dict=None,
 ) -> tuple[Any, dict]:
-    """创建股票筛选Agent（兼容旧接口）.
+    """创建股票筛选Agent.
     
     Args:
         llm: LLM实例
@@ -146,61 +149,45 @@ def create_screener_agent(
         skill_registry: 技能注册表
         long_term_memory: 长期记忆
         skills_dir: Skills目录（可选）
-        deep_thinking: 是否深度思考模式
-        max_iterations: 最大迭代次数
         query: 用户查询（可选）
         rules_dict: 规则字典（可选）
         
     Returns:
         (Agent实例, initial_files)元组
     """
-    # 导入DeepAgents或LangGraph相关模块
+    # 导入DeepAgents相关模块
     try:
-        if deep_thinking:
-            from deepagents import create_deep_agent
-            from deepagents.backends.state import StateBackend
-            from langgraph.checkpoint.memory import MemorySaver
-            
-            # 准备 Skills 文件
-            skills_files = _prepare_skills_files(skill_registry, skills_dir)
-            
-            # 准备 Memory 文件 (AGENTS.md)
-            memory_content = _build_memory_content(long_term_memory, query)
-            
-            # 合并 Skills 和 Memory 到 initial_files
-            initial_files = {
-                **skills_files,
-                "/AGENTS.md": _create_file_data(memory_content),
-            }
-            
-            # 创建 checkpointer（Memory 必需）
-            checkpointer = MemorySaver()
-            
-            # 创建 Deep Agent
-            agent = create_deep_agent(
-                model=llm,
-                tools=tool_provider.get_tools_for_agent("all"),
-                system_prompt=_build_system_prompt(rules_dict),
-                backend=(lambda rt: StateBackend(rt)),
-                skills=["/skills/"],
-                memory=["/AGENTS.md"],
-                checkpointer=checkpointer,
-            )
-            
-            logger.info("[OK] Deep thinking agent created successfully")
-        else:
-            from langgraph.prebuilt import create_react_agent
-            agent = create_react_agent(
-                model=llm,
-                tools=tool_provider.get_tools_for_agent("all"),
-                state_modifier=_build_system_prompt(rules_dict),
-            )
-            
-            # 快速模式不需要 initial_files
-            initial_files = {
-                "skills": {},
-                "rules": rules_dict or [],
-            }
+        from deepagents import create_deep_agent
+        from deepagents.backends.state import StateBackend
+        from langgraph.checkpoint.memory import MemorySaver
+        
+        # 准备 Skills 文件
+        skills_files = _prepare_skills_files(skill_registry, skills_dir)
+        
+        # 准备 Memory 文件 (AGENTS.md)
+        memory_content = _build_memory_content(long_term_memory, query)
+        
+        # 合并 Skills 和 Memory 到 initial_files
+        initial_files = {
+            **skills_files,
+            "/AGENTS.md": _create_file_data(memory_content),
+        }
+        
+        # 创建 checkpointer（Memory 必需）
+        checkpointer = MemorySaver()
+        
+        # 创建 Deep Agent
+        agent = create_deep_agent(
+            model=llm,
+            tools=tool_provider.get_tools_for_agent("all"),
+            system_prompt=_build_system_prompt(rules_dict),
+            backend=(lambda rt: StateBackend(rt)),
+            skills=["/skills/"],
+            memory=["/AGENTS.md"],
+            checkpointer=checkpointer,
+        )
+        
+        logger.info("[OK] Deep thinking agent created successfully")
         
         return agent, initial_files
         
@@ -373,8 +360,10 @@ def _create_file_data(content: str) -> dict:
     """
     from datetime import datetime
     
+    now = datetime.now().isoformat()
     return {
         "content": [content],  # deepagents 期望 list[str]
         "type": "text",
-        "modified_at": datetime.now().isoformat(),
+        "created_at": now,
+        "modified_at": now,
     }

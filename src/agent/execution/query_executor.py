@@ -133,7 +133,7 @@ class QueryExecutor:
         
         # 调用Agent
         try:
-            recursion_limit = max(60, self.settings.harness.max_iterations * 20) if self.settings.harness.deep_thinking else 30
+            recursion_limit = 60  # 硬编码，确保 Agent 有足够的思考步数
             
             result = self.agent.invoke(
                 {

@@ -95,10 +95,9 @@ class OutputConfig(BaseModel):
 
 class HarnessConfig(BaseModel):
     """约束框架配置."""
-    max_iterations: int = Field(default=3, gt=0)  # 降低默认值，避免无限循环（原25）
+    max_iterations: int = Field(default=3, gt=0)  # Agent 深度思考的最大迭代次数
     max_consecutive_errors: int = Field(default=3, gt=0)
     max_execution_time: int = Field(default=300, gt=0)
-    deep_thinking: bool = Field(default=False)  # 是否启用深度思考模式
     hooks: dict[str, Any] = Field(default_factory=lambda: {
         "PreToolUse": [
             {

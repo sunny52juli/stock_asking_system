@@ -1,4 +1,4 @@
-﻿"""质量评估协议与选股评估器实现.
+"""质量评估协议与选股评估器实现.
 
 定义通用的 QualityEvaluator 协议，并提供选股领域的 ScreeningQualityEvaluator 实现。
 支持 Protocol 设计，便于领域扩展。
@@ -162,6 +162,14 @@ class ScreeningQualityEvaluator:
         # 提取候选股票（从多个可能的位置）
         candidates = result.get("candidates", [])
         
+        # ✅ 关键修复：从元数据中获取真实匹配数量（如果存在）
+        total_matched = candidate_count = len(candidates)
+        if candidates and isinstance(candidates[0], dict):
+            metadata = candidates[0].get('_metadata', {})
+            if metadata:
+                total_matched = metadata.get('total_matched', candidate_count)
+                logger.debug(f"🔍 质量评估：物理匹配 {total_matched} 只，返回 {candidate_count} 只")
+        
         # 如果顶层没有，尝试从工具调用结果中提取
         if not candidates:
             messages = result.get("messages", [])
@@ -193,9 +201,8 @@ class ScreeningQualityEvaluator:
                     except (json.JSONDecodeError, TypeError):
                         pass
         
-        # 1. 评估候选股票数量
-        candidate_count = len(candidates)
-        score, issues, suggestions = self._evaluate_candidate_count(candidate_count)
+        # 1. 评估候选股票数量（使用真实匹配数量）
+        score, issues, suggestions = self._evaluate_candidate_count(total_matched)
         scores.append(score)
         all_issues.extend(issues)
         all_suggestions.extend(suggestions)

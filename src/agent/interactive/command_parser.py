@@ -71,6 +71,9 @@ class CommandParser:
                 return self._handle_load(args)
             
             elif cmd in ['quit', 'exit', 'q']:
+                # [OK] 记录最后执行的命令，用于退出时判断是否提示保存
+                if self.editor:
+                    self.editor._last_command = cmd
                 print("\n👋 退出编辑模式")
                 return False
             

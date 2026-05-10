@@ -84,9 +84,8 @@ class ScreenerOrchestrator:
                 hooks=self.component_manager.hooks,
             )
             
-            # 4. 深度模式下立即创建Agent
-            if self.settings.harness.deep_thinking:
-                self._create_agent()
+            # 4. 立即创建Agent
+            self._create_agent()
             
             logger.info("\n" + "=" * 60)
             logger.info("[OK] 系统初始化完成")
@@ -127,9 +126,8 @@ class ScreenerOrchestrator:
             logger.error("[ERROR] QueryExecutor未初始化")
             return None
         
-        # 快速模式下，每次查询前创建Agent
-        if not self.settings.harness.deep_thinking:
-            self._create_agent(query=query)
+        # 每次查询前创建Agent
+        self._create_agent(query=query)
         
         # 委托给QueryExecutor执行
         return self.query_executor.execute_query(query, query_id)

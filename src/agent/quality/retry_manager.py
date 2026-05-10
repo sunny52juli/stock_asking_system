@@ -1,6 +1,6 @@
 """错误重试管理器 - 智能错误分类和参数调整.
 
-from src.agent.memory.long_term import LongTermMemory
+from src.agent.memory import GraphDatabaseMemory
 - 6种错误类型分类（增强版）
 - 自动参数调整策略（支持筛选条件自适应）
 - 最大重试次数控制
@@ -153,7 +153,7 @@ class RetryManager:
                 wait(manager.get_delay())
     """
 
-    def __init__(self, config: RetryConfig | None = None, memory: LongTermMemory | None = None):
+    def __init__(self, config: RetryConfig | None = None, memory: GraphDatabaseMemory | None = None):
         """初始化重试管理器.
         
         Args:
@@ -490,7 +490,7 @@ class RetryManager:
 _retry_manager_instance: RetryManager | None = None
 
 
-def get_retry_manager(config: RetryConfig | None = None, memory: LongTermMemory | None = None) -> RetryManager:
+def get_retry_manager(config: RetryConfig | None = None, memory: GraphDatabaseMemory | None = None) -> RetryManager:
     """获取全局重试管理器实例（单例模式）.
     
     Args:

@@ -154,11 +154,6 @@ class TestHarnessConfig:
         with pytest.raises(ValidationError):
             HarnessConfig(max_execution_time=0)
     
-    def test_deep_thinking_default(self):
-        """深度思考模式默认关闭."""
-        config = HarnessConfig()
-        assert config.deep_thinking is False
-    
     def test_hooks_structure(self):
         """Hooks 结构验证."""
         config = HarnessConfig()

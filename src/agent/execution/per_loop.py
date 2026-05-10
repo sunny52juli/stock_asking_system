@@ -1,4 +1,4 @@
-﻿"""Plan-Execute-Reflect 循环 - 智能任务执行与反思."""
+"""Plan-Execute-Reflect 循环 - 智能任务执行与反思."""
 
 from __future__ import annotations
 
@@ -73,14 +73,13 @@ class PlanExecuteReflectLoop:
     - 完整的执行轨迹记录
     """
     
-    def __init__(self, max_iterations: int = 3, quality_threshold: float = 0.7):
+    def __init__(self, quality_threshold: float = 0.7):
         """初始化循环控制器.
         
         Args:
-            max_iterations: 最大迭代次数
             quality_threshold: 质量阈值（低于此值触发反思）
         """
-        self.max_iterations = max_iterations
+        self.max_iterations = 3  # 硬编码，无需配置
         self.quality_threshold = quality_threshold
         self.execution_history: list[dict[str, Any]] = []
     
@@ -393,12 +392,11 @@ class PlanExecuteReflectLoop:
 _loop_instance: PlanExecuteReflectLoop | None = None
 
 
-def get_per_loop(max_iterations: int = 3, quality_threshold: float = 0.7) -> PlanExecuteReflectLoop:
+def get_per_loop(quality_threshold: float = 0.7) -> PlanExecuteReflectLoop:
     """获取全局 PER 循环实例."""
     global _loop_instance
     if _loop_instance is None:
         _loop_instance = PlanExecuteReflectLoop(
-            max_iterations=max_iterations,
             quality_threshold=quality_threshold,
         )
     return _loop_instance

@@ -84,7 +84,7 @@ def save_strategy_script(
     query: str,
     state_manager,
     settings
-) -> None:
+) -> str | None:
     """保存策略脚本（增强版 - 带详细错误提示）.
     
     Args:
@@ -93,6 +93,9 @@ def save_strategy_script(
         query: 原始查询
         state_manager: 状态管理器
         settings: 配置对象
+        
+    Returns:
+        脚本路径，失败则返回None
     """
     print("\n📝 正在保存策略脚本...")
     try:
@@ -136,11 +139,14 @@ def save_strategy_script(
             # [OK] 修复：使用 script_paths（数组）而不是 script_path（单数）
             script_paths = save_result.get('script_paths', [])
             if script_paths:
+                script_path = script_paths[0]  # 返回第一个脚本路径
                 print(f"[OK] 脚本已保存 ({len(script_paths)} 个版本):")
                 for path in script_paths:
                     print(f"   📄 {path}")
+                return script_path
             else:
                 print(f"[OK] 脚本已保存")
+                return None
         else:
             # [OK] 增强：详细错误诊断
             error_detail = save_result.get('error', '未知错误') if save_result else 'handle_save 返回 None'
@@ -157,11 +163,14 @@ def save_strategy_script(
                 print(f"\n[TIP] 建议: 查看详细日志获取更多信息")
             
             logger.error(f"[ERROR] 脚本保存失败详情: {save_result}")
+            return None
     
     except ImportError as e:
         print(f"[ERROR] 脚本保存失败: 缺少依赖模块 - {e}")
         logger.error(f"[ERROR] 导入错误: {e}", exc_info=True)
+        return None
     
     except Exception as e:
         print(f"[ERROR] 脚本保存失败: {type(e).__name__}: {e}")
         logger.error(f"[ERROR] 脚本保存异常: {type(e).__name__}: {e}", exc_info=True)
+        return None

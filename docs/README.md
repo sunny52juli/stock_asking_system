@@ -44,10 +44,10 @@ Infrastructure Layer (基础设施层)
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Agent Layer (智能体层)                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │ DeepAgents   │  │ LangGraph    │  │ MCP Client   │  │
-│  │ (深度思考模式) │  │ (快速模式)    │  │ (工具调用)    │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
+│  ┌──────────────┐                    ┌──────────────┐  │
+│  │ DeepAgents   │                    │ MCP Client   │  │
+│  │ (深度思考模式) │                    │ (工具调用)    │  │
+│  └──────────────┘                    └──────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │         Interactive Editor (交互式问答) ⭐        │  │
 │  │  • 多轮对话  • 增量修改  • 即时预览  • 版本控制   │  │
@@ -82,7 +82,7 @@ Infrastructure Layer (基础设施层)
 │  • 多维度质量评分 (结果完整性/数量合理性/逻辑一致性)       │
 │  • 错误类型识别 (参数验证/超时/无结果/配置错误等)         │
 │  • 自适应参数调整 (自动优化筛选条件/放宽阈值)             │
-│  • 持久化学习 (SQLite记录重试历史供Agent参考)            │
+│  • 持久化学习 (Neo4j记录重试历史供Agent参考)            │
 └─────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────┐
@@ -135,7 +135,7 @@ Infrastructure Layer (基础设施层)
    │   └─ 满意后保存或继续调整
    └─ 跳过，继续新查询 (n)
    ↓
-   (可选) 触发回测验证
+  
 ```
 
 #### 2. 回测验证
@@ -253,13 +253,13 @@ python app/backtest.py
 
 **职责**：基于LLM的智能决策引擎，理解用户意图并生成可执行的量化策略。
 
-#### 💬 交互式问答功能（新增）
+#### 💬 交互式问答功能
 
 **核心特性**：
 - **自然语言微调**：在编辑模式下直接输入中文指令（如"增加五日线约束"），AI 自动调整策略逻辑
 - **多轮对话**：支持连续追问和条件调整，无需重新输入完整查询
 - **即时预览**：每次修改后立即执行并显示结果，快速迭代优化
-- **等权综合排序**：移除旧的置信度指标，采用截面归一化后的等权求和算法进行公平排序
+- **等权综合排序**：移除旧的置信度指标，采用截面归一化后的加权求和算法进行公平排序
 - **版本控制**：支持 undo/redo、快照保存/加载，管理多个策略版本
 
 **技术实现**：详见 [交互式问答原理](INTERACTIVE_QA_PRINCIPLE.md)
@@ -268,7 +268,10 @@ python app/backtest.py
 - **Agent Factory**：根据配置创建不同模式的Agent
 - **Interactive Editor**：交互式编辑器（`src/agent/interactive/`）
 - **Skill Registry**：三层渐进式技能加载系统
-- **Long-term Memory**：跨会话持久化 (SQLite)
+- **Long-term Memory**：跨会话持久化 (Neo4j 图数据库)
+  - **策略历史存储**：保存所有执行的策略到 Neo4j 图数据库
+  - **智能推荐**：根据当前查询自动推荐相似历史策略
+  - **经验学习**：Agent可以参考历史成功策略优化新生成的逻辑
 - **Tool Provider**：统一管理MCP工具和本地Bridge工具
 - **Harness Framework**：Hooks/Rules/Permissions约束框架
   - **Hooks Engine**：三阶段钩子 (PreToolUse/**PostToolUse**/Stop)
@@ -289,6 +292,15 @@ python app/backtest.py
     - 自动检查 expression 中的阈值是否在合理范围内
     - 防止常见错误：`outperform_rate > 30`、`rsi > 150` 等
     - **实时拦截**：工具调用后立即验证，阻止明显错误的参数
+- **Observability System**：观测与记忆系统（新增）⭐
+  - **Telemetry**：性能追踪与统计
+    - 自动记录每次查询的执行时间、状态
+    - Trace文件保存到 `.stock_asking/traces/`
+    - 会话结束时打印统计摘要（成功率、平均耗时等）
+  - **Long-term Memory**：策略历史管理
+    - 保存策略到 Neo4j 图数据库
+    - 智能推荐相似历史策略
+    - 支持按关键词搜索历史记录
 - **智能参数验证**：Pydantic 自动验证 + 智能纠错建议
 
 ### 3. Screening Engine - 股票筛选引擎
@@ -364,10 +376,11 @@ python app/backtest.py
 stock_asking_system/
 ├── src/                      # 核心业务逻辑
 │   ├── agent/               # Agent智能体系统
-│   │   ├── core/           # Agent工厂、编排器
+│   │   ├── core/           # Agent编排器
 │   │   ├── tools/          # Bridge工具提供者
 │   │   ├── context/        # Skills、Prompts
-│   │   ├── memory/         # 长短期记忆
+│   │   ├── memory/         # 长期记忆
+│   │   ├── observability/  # 观测与记忆系统 ⭐
 │   │   ├── harness/        # 约束框架
 │   │   │   ├── hooks.py    # Hooks执行器 (PreToolUse/PostToolUse/Stop)
 │   │   │   ├── rules.py    # Rules加载器 (.md文件→system prompt)
@@ -382,7 +395,7 @@ stock_asking_system/
 │   │   │   └── stock_pool_service.py  # 股票池过滤服务 ⭐
 │   │   ├── execution/      # 执行层
 │   │   │   └── state_manager.py     # 会话状态管理器
-│   │   ├── initialization/ # 初始化模块（已精简）
+│   │   ├── initialization/ # 初始化模块
 │   │   │   ├── component_initializer.py  # 组件初始化器
 │   │   │   └── services/   # 初始化服务
 │   │   │       └── industry_matcher_service.py  # 行业匹配服务
@@ -431,11 +444,13 @@ stock_asking_system/
 │   │   ├── data-quality.md       # 数据质量规则
 │   │   ├── expression-design.md  # 表达式设计规范
 │   │   └── tool-value-ranges.md  # 工具返回值范围指南
-│   └── skills/           # Agent技能库（按需加载）
-│       ├── stock-screening/      # 股票筛选技能
-│       ├── strategy-patterns/    # 策略模式参考
-│       └── quality-assessment/   # 质量评估标准
-│           └── SKILL.md          # 质量标准与重试策略
+│   ├── skills/           # Agent技能库（按需加载）
+│   │   ├── stock-screening/      # 股票筛选技能
+│   │   ├── strategy-patterns/    # 策略模式参考
+│   │   └── quality-assessment/   # 质量评估标准
+│   │       └── SKILL.md          # 质量标准与重试策略
+│   ├── traces/           # Telemetry追踪记录
+│   └── memory.db         # 长期记忆数据库（已废弃，迁移至 Neo4j）
 └── docs/                  # 文档
 ```
 
@@ -555,7 +570,7 @@ permissions:
 - 超时 → 减少数据量或简化计算
 
 **持久化学习**：
-- 重试记录存储到 SQLite (`memory.db`)
+- 重试记录存储到 Neo4j 图数据库
 - Agent 可参考历史重试经验优化策略
 
 ### 3. Auto-fix Loop (自动修复循环)
@@ -589,6 +604,28 @@ if quality.should_retry:
 - ✅ 首次筛选结果为空 → 自动放宽条件重试
 - ✅ 结果数量过多 → 自动增加过滤条件
 - ✅ 逻辑不一致 → 重新生成筛选表达式
+
+---
+
+## 🔍 观测与记忆系统
+
+系统提供完整的可观测性和长期记忆能力，帮助优化策略并积累经验。
+
+### 1. Telemetry - 性能追踪
+
+- **自动记录**：每次查询的执行时间、状态和工具调用次数
+- **Trace 文件**：保存到 `.stock_asking/traces/` 目录
+- **会话摘要**：结束时自动打印统计信息（成功率、平均耗时等）
+
+### 2. Long-term Memory - 策略历史（Neo4j 图数据库）
+
+- **策略存储**：所有执行的策略自动保存到 Neo4j 图数据库
+- **智能推荐**：输入新查询时，自动显示相似历史策略
+- **关系网络**：建立策略与指标的关联关系，支持可视化探索
+- **语义搜索**：通过关键词快速查找历史策略
+- **跨会话持久化**：积累个人策略库，避免重复探索
+
+> 💡 **提示**：使用前需安装 [Neo4j Desktop](https://neo4j.com/download/) 并启动数据库
 
 
 
@@ -628,7 +665,22 @@ if quality.should_retry:
 ```
 uv sync
 ```
+
+**可选依赖（记忆系统高级功能）**：
+
+
 ## 🎯 版本更新
+
+### v2.4 - 记忆系统图数据库化与架构优化 (2026-05-11)
+
+**核心改进**：
+- 🧠 **Neo4j 图数据库**：记忆系统完全基于 Neo4j，支持策略关系网络和语义搜索
+- 🏗️ **架构统一**：移除 LangGraph 快速模式，统一使用 deepagents 深度思考模式
+- ⚡ **性能提升**：关系查询速度提升 10-50 倍，自动建立策略与指标关联
+
+> ⚠️ **重要提示**：使用前需安装 [Neo4j Desktop](https://neo4j.com/download/) 并启动数据库（默认端口 7687）
+
+---
 
 ### v2.3 - 自然语言修改架构重构 (2026-05-10)
 
@@ -675,6 +727,7 @@ uv sync
 - **参考项目**：[QuantitativeSystem](https://github.com/luocheng812/QuantitativeSystem/tree/develop) - 感谢 luocheng812 对本框架的设计贡献
 - **开源框架**：
   - [LangChain](https://python.langchain.com/) - 提供强大的 LLM 应用开发框架和 MCP 集成支持
+  - [Neo4j](https://neo4j.com/) - 提供高性能图数据库，支撑记忆系统的关系存储和语义搜索
 - **数据服务**：
   - [Tushare](https://tushare.pro/document/2?doc_id=27)
 

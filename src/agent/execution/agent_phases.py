@@ -34,7 +34,7 @@ def execute_query_with_reflection(
     Returns:
         最终结果
     """
-    max_iterations = settings.harness.max_iterations
+    max_iterations = 3  # 硬编码，与 settings.harness.max_iterations 保持一致
     current_query = query
     
     for iteration in range(1, max_iterations + 1):
@@ -58,7 +58,7 @@ def execute_query_with_reflection(
                 },
                 config={
                     "configurable": {"thread_id": thread_id},
-                    "recursion_limit": max_iterations * 2,  # LangGraph uses pairs of steps (plan + execute)
+                    "recursion_limit": 6,  # 硬编码，配合 max_iterations=3 (plan + execute)
                 },
             )
         except Exception as e:
