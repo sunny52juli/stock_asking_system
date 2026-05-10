@@ -24,13 +24,19 @@
 ## 🏗️ 系统架构
 
 ```
-graph TB
-    A[Agent Layer<br/>智能体层] --> B[Harness Framework<br/>约束框架层]
-    B --> C[Tool Layer<br/>工具层]
-    C --> D[Quality & Retry Layer<br/>质量与重试层]
-    D --> E[Core Logic Layer<br/>核心逻辑层]
-    E --> F[DataHub Layer<br/>数据层]
-    F --> G[Infrastructure Layer<br/>基础设施层]
+Agent Layer (智能体层)
+    ↓
+Harness Framework (约束框架层)
+    ↓
+Tool Layer (工具层)
+    ↓
+Quality & Retry Layer (质量与重试层)
+    ↓
+Core Logic Layer (核心逻辑层)
+    ↓
+DataHub Layer (数据层)
+    ↓
+Infrastructure Layer (基础设施层)
 ```
 
 ### 分层架构图
@@ -153,10 +159,9 @@ graph TB
 > 
 > **注意**：微信链接小龙虾也可以查询，但感觉响应速度有点慢
 
-![小龙虾启动界面](img.png)
-
-![小龙虾交互优化](img_1.png)
-
+| ![小龙虾启动界面](img_2.png) | ![小龙虾交互优化](img_3.png) |
+|:---:|:---:|
+| ![策略筛选结果](img_6.png) | ![策略优化建议](img_7.png) |
 ---
 
 ### 💻 命令行交互式筛选
