@@ -1,4 +1,4 @@
-"""Allow running datahub CLI via python -m datahub."""
+﻿"""Allow running datahub CLI via python -m datahub."""
 
 from datahub.cli import main
 

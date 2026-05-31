@@ -1,4 +1,4 @@
-"""Fund dataset registration: FUND_NAV."""
+﻿"""Fund dataset registration: FUND_NAV."""
 
 from datahub.core.dataset import Dataset, DatasetMeta, DatasetRegistry, FetchStep
 
@@ -7,18 +7,18 @@ DatasetRegistry.register(
     DatasetMeta(
         dataset=Dataset.FUND_NAV,
         domain="fund",
-        partition_by="date",
+        partition_by="datetime",
         key_columns=["ts_code", "nav_date"],
         storage_path="fund/nav",
         date_column="nav_date",
         code_column="ts_code",
-        partition_key_template="{date}",
+        partition_key_template="{datetime}",
         description="基金净值数据",
     ),
     pipeline=[
         FetchStep(
             api_name="fund_nav",
-            param_mapping={"nav_date": "date"},
+            param_mapping={"nav_date": "datetime"},
             fields=None,
             merge_on=[],
         ),
@@ -80,12 +80,12 @@ DatasetRegistry.register(
     DatasetMeta(
         dataset=Dataset.FUND_PORTFOLIO,
         domain="fund",
-        partition_by="date",
+        partition_by="datetime",
         key_columns=["ts_code", "ann_date", "end_date"],
         storage_path="fund/portfolio",
         date_column="ann_date",
         code_column="ts_code",
-        partition_key_template="{date}",
+        partition_key_template="{datetime}",
         description="基金持仓（季报披露）",
     ),
     pipeline=[
@@ -112,12 +112,12 @@ DatasetRegistry.register(
     DatasetMeta(
         dataset=Dataset.FUND_DIVIDEND,
         domain="fund",
-        partition_by="date",
+        partition_by="datetime",
         key_columns=["ts_code", "ann_date"],
         storage_path="fund/dividend",
         date_column="ann_date",
         code_column="ts_code",
-        partition_key_template="{date}",
+        partition_key_template="{datetime}",
         description="基金分红（每份分红金额/除权日/支付日）",
     ),
     pipeline=[

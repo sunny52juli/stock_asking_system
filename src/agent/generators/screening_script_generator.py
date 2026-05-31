@@ -6,8 +6,7 @@ import json
 import time
 from datetime import datetime
 
-from utils.datetime_utils import format_date
-from utils.fs import ensure_dir, sanitize_filename
+from utils.date import format_date, ensure_dir, sanitize_filename
 
 
 class ScreeningScriptGenerator:
@@ -103,6 +102,7 @@ import sys
 import os
 import json
 import argparse
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Any
@@ -111,12 +111,21 @@ from dotenv import load_dotenv
 # 加载环境变量
 load_dotenv()
 
-# 项目根加入路径 (脚本可能在 output/ 下)
-script_dir = os.path.dirname(os.path.abspath(__file__))
-app_dir = os.path.dirname(script_dir)  # app/
-project_root = os.path.dirname(app_dir)  # 项目根目录
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# 项目根加入路径 (脚本可能在 app/screening_scripts/策略名/ 下)
+script_dir = Path(__file__).resolve().parent
+# 向上查找直到找到包含 utils/src/infrastructure 的项目根目录
+current = script_dir
+for _ in range(5):  # 最多向上查找 5 层
+    if (current / "utils").exists() and (current / "src").exists():
+        project_root = current
+        break
+    current = current.parent
+else:
+    # 如果没找到，默认使用 script_dir 的父级的父级
+    project_root = script_dir.parent.parent
+
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 # 导入 StockScreener
 from utils.screening.stock_screener import StockScreener

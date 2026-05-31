@@ -1,4 +1,4 @@
-"""指数工具测试 - 使用伪数据验证所有指数相关工具."""
+﻿"""指数工具测试 - 使用伪数据验证所有指数相关工具."""
 import numpy as np
 import polars as pl
 import pytest

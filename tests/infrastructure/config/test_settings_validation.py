@@ -1,4 +1,4 @@
-"""配置系统测试 - Pydantic Schema 验证."""
+﻿"""配置系统测试 - Pydantic Schema 验证."""
 
 import pytest
 from pathlib import Path

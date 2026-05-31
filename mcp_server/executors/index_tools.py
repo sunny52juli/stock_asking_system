@@ -1,4 +1,4 @@
-"""指数相关性工具 - Polars 高性能实现.
+﻿"""指数相关性工具 - Polars 高性能实现.
 
 所有函数使用 polars 进行计算，提供 10-50x 性能提升。
 适用于大数据量场景（>10万行）。
@@ -12,7 +12,7 @@ import polars as pl
 
 from infrastructure.logging.logger import get_logger
 from mcp_server.auto_register import tool_registry
-from utils.index_utils import prepare_index_returns, merge_stock_with_index_returns
+from utils.data import prepare_index_returns, merge_stock_with_index_returns
 
 logger = get_logger(__name__)
 

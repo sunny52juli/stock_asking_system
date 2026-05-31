@@ -35,8 +35,6 @@ dependencies = [
     "exchange-calendars>=1.15.0",
     # Workspace dependencies
     "stock-asking-mcp",
-    "stock-asking-screener",
-    "stock-asking-backtest",
 ]
 
 [project.optional-dependencies]
@@ -77,12 +75,10 @@ build-backend = "hatchling.build"
 
 # UV Workspace 配置
 [tool.uv.workspace]
-members = ["mcp_server", "stock-asking-screener", "stock-asking-backtest"]
+members = ["mcp_server"]
 
 [tool.uv.sources]
 stock-asking-mcp = { workspace = true }
-stock-asking-screener = { workspace = true }
-stock-asking-backtest = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["config", "core", "datahub", "factor_backtest_system", "stock_asking_system", "core.agent"]

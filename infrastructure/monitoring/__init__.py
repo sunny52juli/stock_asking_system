@@ -1,4 +1,4 @@
-"""监控模块."""
+﻿"""监控模块."""
 
 from infrastructure.monitoring.health_check import (
     HealthChecker,

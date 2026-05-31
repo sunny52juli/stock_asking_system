@@ -1,4 +1,4 @@
-"""CLI handlers: call datahub APIs and screening_scripts JSON."""
+﻿"""CLI handlers: call datahub APIs and screening_scripts JSON."""
 
 from __future__ import annotations
 
@@ -38,11 +38,11 @@ def _opts_repo(opts: dict[str, Any]) -> dict[str, Any]:
 
 # ---- stock ----
 def run_stock_price(opts: dict[str, Any]) -> int:
-    date = opts.get("date")
+    date = opts.get("datetime")
     start_date = opts.get("start_date")
     end_date = opts.get("end_date")
     if date is None and (start_date is None or end_date is None):
-        print(err_json("Provide either --date or (--start-date and --end-date)"))
+        print(err_json("Provide either --datetime or (--start-datetime and --end-datetime)"))
         return 2
     try:
         s = Stock(**_opts_repo(opts))
@@ -79,11 +79,11 @@ def run_stock_universe_by_index(opts: dict[str, Any]) -> int:
     if not index_code:
         print(err_json("index_code (positional) is required"))
         return 2
-    date = opts.get("date")
+    date = opts.get("datetime")
     start_date = opts.get("start_date")
     end_date = opts.get("end_date")
     if date is None and (start_date is None or end_date is None):
-        print(err_json("Provide either --date or (--start-date and --end-date)"))
+        print(err_json("Provide either --datetime or (--start-datetime and --end-datetime)"))
         return 2
     try:
         s = Stock(**_opts_repo(opts))
@@ -119,11 +119,11 @@ def run_stock_available_dates(opts: dict[str, Any]) -> int:
 
 # ---- fund ----
 def run_fund_nav(opts: dict[str, Any]) -> int:
-    date = opts.get("date")
+    date = opts.get("datetime")
     start_date = opts.get("start_date")
     end_date = opts.get("end_date")
     if date is None and (start_date is None or end_date is None):
-        print(err_json("Provide either --date or (--start-date and --end-date)"))
+        print(err_json("Provide either --datetime or (--start-datetime and --end-datetime)"))
         return 2
     try:
         f = Fund(**_opts_repo(opts))
@@ -180,11 +180,11 @@ def run_index_members(opts: dict[str, Any]) -> int:
     if not index_code:
         print(err_json("index_code (positional) is required"))
         return 2
-    date = opts.get("date")
+    date = opts.get("datetime")
     start_date = opts.get("start_date")
     end_date = opts.get("end_date")
     if date is None and (start_date is None or end_date is None):
-        print(err_json("Provide either --date or (--start-date and --end-date)"))
+        print(err_json("Provide either --datetime or (--start-datetime and --end-datetime)"))
         return 2
     try:
         idx = Index(**_opts_repo(opts))
@@ -209,7 +209,7 @@ def run_index_level(opts: dict[str, Any]) -> int:
     start_date = opts.get("start_date")
     end_date = opts.get("end_date")
     if not index_code or not start_date or not end_date:
-        print(err_json("index_code, --start-date and --end-date are required"))
+        print(err_json("index_code, --start-datetime and --end-datetime are required"))
         return 2
     try:
         idx = Index(**_opts_repo(opts))
@@ -246,7 +246,7 @@ def run_news_sentiment(opts: dict[str, Any]) -> int:
         n = News(**_opts_repo(opts))
         df = n.sentiment(
             code=opts.get("code"),
-            date=opts.get("date"),
+            date=opts.get("datetime"),
             start_date=opts.get("start_date"),
             end_date=opts.get("end_date"),
             source=opts.get("source", "combined"),
@@ -284,9 +284,9 @@ def run_news_events(opts: dict[str, Any]) -> int:
 # ---- feature ----
 def run_feature_snapshot(opts: dict[str, Any]) -> int:
     factors = opts.get("factors")
-    date = opts.get("date")
+    date = opts.get("datetime")
     if not factors or not date:
-        print(err_json("--factors and --date are required"))
+        print(err_json("--factors and --datetime are required"))
         return 2
     try:
         fe = Feature(**_opts_repo(opts))
@@ -333,15 +333,15 @@ HANDLERS: dict[tuple[str, str], Any] = {
     ("stock", "universe"): run_stock_universe,
     ("stock", "universe-by-index"): run_stock_universe_by_index,
     ("stock", "available-dates"): run_stock_available_dates,
-    # Deleted: ("stock", "latest-date") - 避免使用 latest_date() 导致未来函数问题
+    # Deleted: ("stock", "latest-datetime") - 避免使用 latest_date() 导致未来函数问题
     ("fund", "nav"): run_fund_nav,
     ("fund", "universe"): run_fund_universe,
     ("fund", "available-dates"): run_fund_available_dates,
-    # Deleted: ("fund", "latest-date") - 避免使用 latest_date() 导致未来函数问题
+    # Deleted: ("fund", "latest-datetime") - 避免使用 latest_date() 导致未来函数问题
     ("index", "members"): run_index_members,
     ("index", "level"): run_index_level,
     ("index", "available-dates"): run_index_available_dates,
-    # Deleted: ("index", "latest-date") - 避免使用 latest_date() 导致未来函数问题
+    # Deleted: ("index", "latest-datetime") - 避免使用 latest_date() 导致未来函数问题
     ("news", "sentiment"): run_news_sentiment,
     ("news", "events"): run_news_events,
     ("feature", "snapshot"): run_feature_snapshot,

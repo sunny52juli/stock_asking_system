@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Hook 脚本：统一验证策略格式与工具调用.
 
 合并了 validate-strategy 和 validate-tool-call 的功能。

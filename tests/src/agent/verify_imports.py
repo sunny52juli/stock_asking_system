@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """验证重构后的导入是否正确."""
 
 import sys

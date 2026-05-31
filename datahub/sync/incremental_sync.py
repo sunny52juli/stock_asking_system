@@ -255,7 +255,7 @@ class IncrementalSyncer:
     def _extract_timestamp(self, record: Any) -> datetime:
         """从记录中提取时间戳."""
         # 尝试常见的时间字段
-        for field_name in ['timestamp', 'time', 'date', 'datetime', 'update_time']:
+        for field_name in ['timestamp', 'time', 'datetime', 'datetime', 'update_time']:
             if hasattr(record, field_name):
                 value = getattr(record, field_name)
                 if isinstance(value, datetime):

@@ -1,4 +1,4 @@
-"""策略工具函数 - 提供策略模板和查询."""
+﻿"""策略工具函数 - 提供策略模板和查询."""
 
 from infrastructure.config.settings import load_settings
 

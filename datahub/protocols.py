@@ -1,4 +1,4 @@
-"""Domain protocols (contracts). Implementations in domain/.
+﻿"""Domain protocols (contracts). Implementations in domain/.
 
 Output columns align with docs/data/TUSHARE_API_REFERENCE.md where applicable.
 """
@@ -50,7 +50,7 @@ class StockProtocol(Protocol):
         ...
 
     def latest_date(self) -> str | None:
-        """Latest available trade date (YYYYMMDD)."""
+        """Latest available trade datetime (YYYYMMDD)."""
         ...
 
     def returns(
@@ -61,7 +61,7 @@ class StockProtocol(Protocol):
         freq: str = "daily",
         adj: str = "post",
     ) -> pl.DataFrame:
-        """Returns series. Columns: ts_code, date, return (and/or freq). From price + adj_factor."""
+        """Returns series. Columns: ts_code, datetime, return (and/or freq). From price + adj_factor."""
         ...
 
     def liquidity(
@@ -213,7 +213,7 @@ class FundProtocol(Protocol):
         ...
 
     def latest_date(self) -> str | None:
-        """Latest NAV date (YYYYMMDD)."""
+        """Latest NAV datetime (YYYYMMDD)."""
         ...
 
     def universe(
@@ -239,7 +239,7 @@ class FundProtocol(Protocol):
         end_date: str,
         freq: str = "daily",
     ) -> pl.DataFrame:
-        """Fund returns. Columns: ts_code, date, return (from nav)."""
+        """Fund returns. Columns: ts_code, datetime, return (from nav)."""
         ...
 
     def risk_metrics(
@@ -313,7 +313,7 @@ class IndexProtocol(Protocol):
         ...
 
     def latest_date(self, index_code: str | None = None) -> str | None:
-        """Latest index date (YYYYMMDD)."""
+        """Latest index datetime (YYYYMMDD)."""
         ...
 
     def level(
@@ -400,7 +400,7 @@ class NewsProtocol(Protocol):
         source: Literal["news", "social", "analyst", "combined"] = "combined",
         window: int = 7,
     ) -> pl.DataFrame:
-        """Sentiment scores. Columns vary by source (code, date, score, etc)."""
+        """Sentiment scores. Columns vary by source (code, datetime, score, etc)."""
         ...
 
     def events(
@@ -420,7 +420,7 @@ class NewsProtocol(Protocol):
             "all",
         ] = "all",
     ) -> pl.DataFrame:
-        """Events. Columns: code, date, event_type, title, summary, etc."""
+        """Events. Columns: code, datetime, event_type, title, summary, etc."""
         ...
 
     def earnings_surprise(
@@ -430,7 +430,7 @@ class NewsProtocol(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> pl.DataFrame:
-        """Earnings surprise. Columns: code, date, actual, estimate, surprise, etc."""
+        """Earnings surprise. Columns: code, datetime, actual, estimate, surprise, etc."""
         ...
 
     def filings(
@@ -460,7 +460,7 @@ class NewsProtocol(Protocol):
         end_date: str | None = None,
         action: Literal["initiation", "upgrade", "downgrade", "reiterate", "all"] = "all",
     ) -> pl.DataFrame:
-        """Analyst ratings. Columns: code, date, action, rating, target_price, etc."""
+        """Analyst ratings. Columns: code, datetime, action, rating, target_price, etc."""
         ...
 
     def consensus(
@@ -471,7 +471,7 @@ class NewsProtocol(Protocol):
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> pl.DataFrame:
-        """Consensus estimates. Columns: code, date, eps, revenue, etc."""
+        """Consensus estimates. Columns: code, datetime, eps, revenue, etc."""
         ...
 
     def estimate_revisions(
@@ -482,7 +482,7 @@ class NewsProtocol(Protocol):
         end_date: str | None = None,
         period: Literal["fy1", "fy2"] = "fy1",
     ) -> pl.DataFrame:
-        """Estimate revisions. Columns: code, date, period, revision, etc."""
+        """Estimate revisions. Columns: code, datetime, period, revision, etc."""
         ...
 
     def calendar(
@@ -500,7 +500,7 @@ class NewsProtocol(Protocol):
         ] = "all",
         codes: list[str] | None = None,
     ) -> pl.DataFrame:
-        """Event calendar. Columns: code, date, event_type, description. Tushare: disclosure_date."""
+        """Event calendar. Columns: code, datetime, event_type, description. Tushare: disclosure_date."""
         ...
 
     def available_dates(
@@ -514,7 +514,7 @@ class NewsProtocol(Protocol):
         self,
         kind: Literal["sentiment", "events", "filings", "analyst"] = "events",
     ) -> str | None:
-        """Latest date for given kind (YYYYMMDD)."""
+        """Latest datetime for given kind (YYYYMMDD)."""
         ...
 
 
@@ -526,11 +526,11 @@ class CalendarProtocol(Protocol):
         ...
 
     def is_trade_day(self, date: str) -> bool:
-        """Return True if date is a trade day (YYYYMMDD)."""
+        """Return True if datetime is a trade day (YYYYMMDD)."""
         ...
 
     def get_latest_trade_date(self, before_date: str) -> str | None:
-        """Return the latest trade date strictly before before_date (YYYYMMDD), or None."""
+        """Return the latest trade datetime strictly before before_date (YYYYMMDD), or None."""
         ...
 
 
@@ -645,5 +645,5 @@ class FeatureProtocol(Protocol):
         ...
 
     def latest_date(self, factor: str | None = None) -> str | None:
-        """Latest date for factor(s) (YYYYMMDD)."""
+        """Latest datetime for factor(s) (YYYYMMDD)."""
         ...

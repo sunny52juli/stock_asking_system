@@ -1,4 +1,4 @@
-"""Base loader and mixin: multi-index, filter, merge, extract industries, clean. No I/O."""
+﻿"""Base loader and mixin: multi-index, filter, merge, extract industries, clean. No I/O."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class BaseDataLoader(ABC):
         return data
 
     def merge_data_dicts(self, data_dict: dict[str, pd.DataFrame]) -> pd.DataFrame:
-        """Concat DataFrames from date -> df dict."""
+        """Concat DataFrames from datetime -> df dict."""
         if not data_dict:
             return pd.DataFrame()
         return pd.concat(data_dict.values(), ignore_index=True)

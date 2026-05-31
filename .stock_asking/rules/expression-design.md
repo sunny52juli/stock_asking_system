@@ -165,7 +165,7 @@ tools = [
 
 #### 实际示例
 
-```json
+``json
 {
   "name": "低波动跑赢大盘",
   "expression": "(volatility_20d < volatility_ma60) & (excess_return > 0) & (close > ma20)",
@@ -204,6 +204,7 @@ tools = [
 - ✅ 确保依赖图是有向无环图（DAG）
 - ✅ 按依赖层次组织工具列表
 
+
 ### 推荐的表达式模式
 
 #### 模式 1：低波动 + 正收益
@@ -226,13 +227,13 @@ tools = [
 (pe_rank < 0.5) & (return_20d > 0) & (rsi > 40) & (rsi < 70)
 ```
 
-### 置信度公式设计
+### 置信度权重配置
 
-#### ⚠️ **强制要求：权重定义完整性**
+#### ⚠️ **强制要求：必须使用 confidence_weights 字典**
 
 **Agent 只负责提供指标权重，不要生成复杂的计算公式！系统有固定的打分模式。**
 
-**推荐格式（新）**：使用 `confidence_weights` 字典
+**唯一支持的格式**：使用 `confidence_weights` 字典
 ```json
 {
   "expression": "(beta_60 > 1.0) & (alpha_60 > 0)",
@@ -247,23 +248,15 @@ tools = [
 }
 ```
 
-**兼容格式（旧）**：使用 `confidence_formula` 字符串
-```json
-{
-  "expression": "(beta_60 > 1.0) & (alpha_60 > 0)",
-  "confidence_formula": "rank_normalize(beta_60) * 0.5 + rank_normalize(alpha_60) * 0.5",
-  "tools": [
-    {"var": "beta_60", "tool": "beta", "params": {"window": 60}},
-    {"var": "alpha_60", "tool": "alpha", "params": {"window": 60}}
-  ]
-}
-```
-
 **规则**：
-1. **完整性强制要求**：`confidence_weights` 中的键名必须与 `expression` 中涉及的所有核心指标变量完全一致。如果表达式为 `(beta > 1) & (alpha > 0) & (atr < 5)`，则权重字典必须包含 `beta`, `alpha`, `atr` 三个键。
-2. **权重之和为 1**：系统会自动归一化，但你应该尽量使总和接近 1（如 0.4 + 0.3 + 0.3）。
-3. **反向指标处理**：对于越小越好的指标（如 `atr`），在系统中会自动进行反向归一化，你只需正常指定其重要性权重。
-4. **禁止复杂公式**：不要生成类似 `(alpha / 0.05) * 0.3` 的复杂计算，直接提供权重即可。
+1. **✅ 强制要求**：必须提供 `confidence_weights` 字典，否则不会执行加权打分。
+2. **完整性强制要求**：`confidence_weights` 中的键名必须与打分指标完全一致。
+3. **⚠️ 重要区分**：
+   - **筛选变量**：在 `expression` 中用于过滤的变量（如 `(atr14 / ma60 > 0.03)` 中的 `atr14` 和 `ma60`）
+   - **打分指标**：在 `confidence_weights` 中定义的、用于最终排序的指标
+   - **权重数量 = 打分指标数量 ≠ 筛选变量数量**
+4. **权重之和为 1**：系统会自动归一化，但你应该尽量使总和接近 1（如 0.4 + 0.3 + 0.3）。
+5. **反向指标处理**：对于越小越好的指标（如 `atr`），在系统中会自动进行反向归一化，你只需正常指定其重要性权重。
 
 #### ❌ 错误示例：权重定义不完整
 
@@ -277,10 +270,45 @@ tools = [
 ```
 
 **错误原因**：
-- 表达式中有 3 个指标：`beta_60`, `alpha_60`, `atr_14`
-- 但 `confidence_weights` 只定义了 `beta_60` 的权重
-- 缺少 `alpha_60` 和 `atr_14` 的权重定义
-- **系统会回退到等权分配，并给出警告**
+- `confidence_weights` 中只定义了 `beta_60` 的权重
+- 缺少其他打分指标的权重定义
+- **系统将回退到等权分配，并给出警告**
+
+---
+
+#### ⚠️ 常见误解：混淆筛选变量与打分指标
+
+**场景**：找出高波动（ATR/MA比值大）且跑赢大盘的股票
+
+```json
+{
+  "expression": "(atr14 / ma60 > 0.03) & (alpha_60d > 0) & (outperform_rate_60d >= 0.5)",
+  
+  // ❌ 错误理解：给 expression 中所有变量都定义权重
+  "confidence_weights": {
+    "atr14": 0.25,           // 错误！这是筛选条件的中间变量
+    "ma60": 0.25,            // 错误！这是筛选条件的中间变量
+    "alpha_60d": 0.25,
+    "outperform_rate_60d": 0.25
+  }
+}
+```
+
+**为什么错误**：
+- `atr14` 和 `ma60` 只在筛选条件 `(atr14 / ma60 > 0.03)` 中使用
+- 它们是**中间计算过程**，不参与最终 confidence 打分
+- 真正用于打分的只有 `alpha_60d` 和 `outperform_rate_60d`
+
+```json
+// ✅ 正确做法：只给打分指标定义权重
+{
+  "expression": "(atr14 / ma60 > 0.03) & (alpha_60d > 0) & (outperform_rate_60d >= 0.5)",
+  "confidence_weights": {
+    "alpha_60d": 0.6,              // 超额收益更重要
+    "outperform_rate_60d": 0.4     // 跑赢天数辅助
+  }
+}
+```
 
 #### ✅ 正确示例：完整权重定义
 
@@ -302,16 +330,23 @@ tools = [
 
 **❌ 错误做法**：
 ```json
-// 错误 1：生成复杂的计算公式（系统会自动归一化）
-"confidence_formula": "beta_60 * 0.4 + (alpha_60 / 0.05) * 0.3"
-
-// 错误 2：包含未在 expression 中使用的指标
+// 错误 1：包含未在 expression 中使用的指标
 "confidence_weights": {
   "beta_60": 0.4,
   "alpha_60": 0.3,
   "atr_14": 0.3
 }
 // 如果 expression 是 "(beta_60 > 1.0) & (alpha_60 > 0)"，没有使用 atr_14，则不应纳入打分
+```
+
+**✅ 正确做法**：
+``json
+// 只使用 confidence_weights 字典
+"confidence_weights": {
+  "beta_60": 0.4,
+  "alpha_60": 0.3,
+  "atr_14": 0.3
+}
 ```
 
 #### ❌ 错误：直接使用原始值
@@ -337,7 +372,11 @@ rank_normalize(1 - volatility_20d/volatility_ma60) * 0.6 + rank_normalize(excess
 - [ ] 是否使用了相对指标（与历史比、与指数比、分位数）？
 - [ ] **表达式中的所有变量是否都在 `tools` 列表中有定义？**
 - [ ] **是否没有在表达式中直接使用工具函数名（如 `rolling_mean()`）？**
-- [ ] **权重完整性检查**：如果定义了 `confidence_weights`，是否为 `expression` 中出现的所有核心指标都指定了权重？（缺失任何一个都会导致系统回退到等权分配并触发警告）
+- [ ] **⚠️ 区分筛选变量与打分指标**：
+  - `expression` 中的变量用于过滤（可能包含中间计算）
+  - `confidence_weights` 中的变量用于最终排序
+  - **权重数量 = 打分指标数量 ≠ expression 变量数量**
+- [ ] **必须提供 `confidence_weights`**：是否为所有打分指标都指定了权重？
 - [ ] **`confidence_weights` 中的权重之和是否接近 1？**
 - [ ] 表达式是否能在不同市场环境下自适应？
 - [ ] 是否考虑了多个维度（波动、收益、趋势、估值）？

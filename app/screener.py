@@ -1,4 +1,4 @@
-"""股票筛选主入口 - 支持增量策略调整和数据复用."""
+﻿"""股票筛选主入口 - 支持增量策略调整和数据复用."""
 
 import sys
 import os
@@ -60,7 +60,7 @@ def main():
     orchestrator = ScreenerOrchestrator(settings, state_manager)
     
     print("=" * 70)
-    print("[SYSTEM] 智能股票筛选系统 v2.0")
+    print("[SYSTEM] 智能股票筛选系统 ")
     print("   特性：数据缓存 | 增量计算 | 策略热调整")
     print("=" * 70)
     

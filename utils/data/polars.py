@@ -1,4 +1,4 @@
-"""Polars 高性能计算工具 - 纯 polars 实现.
+﻿"""Polars 高性能计算工具 - 纯 polars 实现.
 
 替代旧的 polars_adapter，所有函数直接返回 polars DataFrame/Series，无 pandas 转换开销。
 """

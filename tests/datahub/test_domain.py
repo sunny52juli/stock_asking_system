@@ -1,4 +1,4 @@
-"""Tests for datahub domain modules."""
+﻿"""Tests for datahub domain modules."""
 
 import pytest
 import pandas as pd
@@ -46,7 +46,7 @@ class TestStockDomain:
         mock_repo.load.assert_called_once()
     
     def test_price_requires_date_or_range(self):
-        """测试 price 方法必须提供 date 或日期范围。"""
+        """测试 price 方法必须提供 datetime 或日期范围。"""
         
         mock_repo = Mock()
         stock = Stock(mock_repo)

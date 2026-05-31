@@ -1,4 +1,4 @@
-"""Skill registry for managing local and dynamic skills.
+﻿"""Skill registry for managing local and dynamic skills.
 
 Skills are knowledge units (not tools) that are injected into agent prompts.
 Local skills are loaded from SKILL.md files, dynamic skills are registered at runtime.

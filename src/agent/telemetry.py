@@ -1,4 +1,4 @@
-"""可观测性模块 - OpenTelemetry 集成.
+﻿"""可观测性模块 - OpenTelemetry 集成.
 
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (

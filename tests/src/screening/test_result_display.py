@@ -1,4 +1,4 @@
-"""筛选模块测试 - result_display.py"""
+﻿"""筛选模块测试 - result_display.py"""
 
 import pytest
 from unittest.mock import MagicMock, patch

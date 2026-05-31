@@ -159,9 +159,9 @@ Infrastructure Layer (基础设施层)
 > 
 > **注意**：微信链接小龙虾也可以查询，但感觉响应速度有点慢
 
-| ![小龙虾启动界面](img_2.png) | ![小龙虾交互优化](img_3.png) |
+| ![小龙虾启动界面](images/1.png) | ![小龙虾交互优化](images/2.png) |
 |:---:|:---:|
-| ![策略筛选结果](img_6.png) | ![策略优化建议](img_7.png) |
+| ![策略筛选结果](images/3.png) | ![策略优化建议](images/4.png) |
 ---
 
 ### 💻 命令行交互式筛选
@@ -262,8 +262,6 @@ python app/backtest.py
 - **等权综合排序**：移除旧的置信度指标，采用截面归一化后的加权求和算法进行公平排序
 - **版本控制**：支持 undo/redo、快照保存/加载，管理多个策略版本
 
-**技术实现**：详见 [交互式问答原理](INTERACTIVE_QA_PRINCIPLE.md)
-
 **核心组件**：
 - **Agent Factory**：根据配置创建不同模式的Agent
 - **Interactive Editor**：交互式编辑器（`src/agent/interactive/`）
@@ -350,24 +348,17 @@ python app/backtest.py
 - **多层配置**：YAML文件 + 环境变量 + 默认值
 - **热重载**：支持运行时重新加载配置
 - **类型安全**：基于Pydantic的配置验证
+- **Setting模块**：统一配置管理中心（`infrastructure/config/settings.py`）
+  - 加载 `app/setting/*.yaml` 配置文件
+  - 支持环境变量覆盖（如 `TUSHARE_TOKEN`）
+  - 提供单例模式的 `get_settings()` 函数
 
 **其他组件**：
 - **Logging**：结构化日志记录
 - **Session Management**：会话状态持久化
 - **Telemetry**：OpenTelemetry集成（可选）
 
-## 💻 技术栈
 
-| 类别 | 技术选型 |
-|------|----------|
-| **AI框架** | deepagents, LangGraph, LangChain |
-| **数据处理** | **Polars (v2.0)**, Pandas, NumPy, PyArrow |
-| **数据源** | Tushare Pro |
-| **通信协议** | MCP (Model Context Protocol) |
-| **配置管理** | Pydantic, YAML, dotenv |
-| **测试框架** | pytest, pytest-cov |
-| **代码质量** | black, ruff, mypy |
-| **包管理** | uv (Python包管理器) |
 
 
 ## 📁 目录结构
@@ -428,6 +419,8 @@ stock_asking_system/
 │   └── executors/          # 工具执行器
 ├── infrastructure/         # 基础设施
 │   ├── config/            # 配置管理
+│   │   ├── settings.py    # Setting模块（统一配置管理中心）⭐
+│   │   └── constants.py   # 配置常量定义
 │   ├── logging/           # 日志系统
 │   └── session/           # 会话管理
 ├── app/                    # 应用入口
@@ -450,7 +443,6 @@ stock_asking_system/
 │   │   └── quality-assessment/   # 质量评估标准
 │   │       └── SKILL.md          # 质量标准与重试策略
 │   ├── traces/           # Telemetry追踪记录
-│   └── memory.db         # 长期记忆数据库（已废弃，迁移至 Neo4j）
 └── docs/                  # 文档
 ```
 
@@ -477,7 +469,7 @@ Harness 框架为 Agent 提供三层约束机制，确保执行过程安全可�
 
 **配置示例**（`screening_interactive.yaml`）：
 
-```yaml
+```
 harness:
   hooks:
     PreToolUse:
@@ -640,17 +632,7 @@ if quality.should_retry:
 
 在 `.stock_asking/skills/` 目录下创建技能目录和 `SKILL.md` 文件，定义特定的选股策略模板和使用指南。
 
-### 工具调用拓扑结构
 
-系统自动识别工具依赖关系并按正确顺序执行：
-
-**依赖层级**：
-1. **基础数据层**：`get_stock_data`, `rolling_mean`, `pct_change`
-2. **技术指标层**：`rsi`, `macd`（依赖收盘价）
-3. **指数相关层**：`beta`, `alpha`, `outperform_rate`（需股票+指数数据）
-4. **高级指标层**：`zscore_normalize`, `rank_normalize`（依赖基础指标）
-
-> Agent 自动处理依赖排序，无需手动指定执行顺序。
 
 ### 扩展数据源
 
@@ -661,23 +643,30 @@ if quality.should_retry:
 - **Python** >= 3.12
 - **uv** (推荐包管理器)
 
-**安装依赖**：
 
-```
-uv sync
-```
+## 💻 技术栈
 
-**可选依赖（记忆系统高级功能）**：
+| 类别 | 技术选型 |
+|------|----------|
+| **AI框架** | deepagents, LangGraph, LangChain |
+| **数据处理** | **Polars (v2.0)**, Pandas, NumPy, PyArrow |
+| **数据源** | Tushare Pro |
+| **通信协议** | MCP (Model Context Protocol) |
+| **配置管理** | Pydantic, YAML, dotenv |
+| **测试框架** | pytest, pytest-cov |
+| **代码质量** | black, ruff, mypy |
+| **包管理** | uv (Python包管理器) |
 
 
 ## 🎯 版本更新
 
-### v2.4 - 记忆系统图数据库化与架构优化 (2026-05-11)
+### v2.4 - 记忆系统图数据库化与数据源增强 (2026-05-31)
 
 **核心改进**：
 - 🧠 **Neo4j 图数据库**：记忆系统完全基于 Neo4j，支持策略关系网络和语义搜索
 - 🏗️ **架构统一**：移除 LangGraph 快速模式，统一使用 deepagents 深度思考模式
-- ⚡ **性能提升**：关系查询速度提升 10-50 倍，自动建立策略与指标关联
+- 🔥 **热门股过滤**：集成 TuShare ths_hot 接口，支持按市场热度筛选股票
+- 📊 **同花顺概念**：新增概念板块数据加载和过滤功能，支持概念组合筛选
 
 ---
 

@@ -73,32 +73,25 @@ def main(
             observation_days=actual_observation_days,
         )
         
-        # 加载原始数据（不过滤）
-        if not engine.load_raw_data():
-            logger.error("❌ 数据加载失败")
-            return
-        
-        # 执行股票池过滤（独立服务模块，与 screener 一致）
+        # 使用 StockPoolService 加载数据（与 screener 一致）
         logger.info("\n" + "=" * 60)
-        logger.info("执行股票池过滤")
+        logger.info("加载市场数据（通过 StockPoolService）")
         logger.info("=" * 60)
         stock_pool_service = StockPoolService(settings)
         
-        # 应用股票池过滤（注意：apply_filter 返回三个值，包括指数数据）
-        filtered_data, filtered_codes, index_data = stock_pool_service.apply_filter(
-            engine.data
-        )
-        logger.info(f"✅ 股票池过滤完成：{len(filtered_codes)} 只股票")
+        # 应用股票池过滤（返回三个值：数据、股票代码、指数数据）
+        filtered_data, filtered_codes, index_data = stock_pool_service.apply_filter()
+        logger.info(f"✅ 数据加载完成：{len(filtered_data)} 条记录，{len(filtered_codes)} 只股票")
         
         # 检查并记录指数数据
         if index_data is not None and not index_data.is_empty():
-            logger.info(f"✅ 从 StockPoolService 获取指数数据: {len(index_data)} 条记录")
+            logger.info(f"✅ 获取指数数据: {len(index_data)} 条记录")
             logger.debug(f"   指数数据列: {list(index_data.columns)}")
         else:
-            logger.warning("⚠️ StockPoolService 未返回有效的指数数据")
+            logger.warning("⚠️ 未获取到有效的指数数据")
             index_data = None
         
-        # 更新引擎的过滤后数据和指数数据
+        # 设置引擎的数据
         engine.data = filtered_data
         engine.index_data = index_data
         
@@ -140,7 +133,7 @@ def cli():
     parser = argparse.ArgumentParser(description='执行策略回测')
     parser.add_argument('--dir', type=str, default=None, 
                        help='策略脚本目录（默认：配置中的第一个策略）')
-    parser.add_argument('--date', type=str, default=None,
+    parser.add_argument('--datetime', type=str, default=None,
                        help='筛选日期 YYYYMMDD（默认：配置中的日期）')
     parser.add_argument('--periods', type=str, default=None,
                        help='持有期列表，逗号分隔（默认：4,10,20）')
@@ -157,7 +150,7 @@ def cli():
     try:
         main(
             scripts_dir=args.dir,
-            screening_date=args.date,
+            screening_date=args.datetime,
             holding_periods=holding_periods,
             observation_days=args.observation,
         )

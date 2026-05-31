@@ -6,11 +6,11 @@ datahub - 数据层统一入口, 仅暴露 DataHub 与五个域入口(驼峰命�
   from datahub import Stock, Fund, Index, Feature, News, Calendar, DataNotFoundError
 
   s = Stock()
-  df = s.price(date="20240301")
+  df = s.price(datetime="20240301")
   cal = Calendar()
   trade_dates = cal.get_trade_dates("20240101", "20240131")
   fe = Feature()
-  snap = fe.snapshot(factors=["momentum_1m"], date="20240301")
+  snap = fe.snapshot(factors=["momentum_1m"], datetime="20240301")
 
 需要统一配置时用 DataHub(配置一次, 再取各域):
 
@@ -29,7 +29,7 @@ __version__ = "3.0.0"
 
 import datahub.registry  # noqa: F401 - side-effect: register datasets
 from datahub.core.exceptions import DataNotFoundError
-from datahub.entries import Calendar, DataHub, Feature, Fund, Index, News, Stock
+from datahub.entries import Calendar, DataHub, Feature, Fund, Index, News, Stock, ThsConcept
 from datahub.loaders import (
     FactorDataLoader,
     StockDataLoader,
@@ -60,6 +60,7 @@ __all__ = [
     "Feature",
     "News",
     "Calendar",
+    "ThsConcept",
     "StockDataLoader",
     "FactorDataLoader",
     "create_stock_data_loader",

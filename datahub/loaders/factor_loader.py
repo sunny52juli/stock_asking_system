@@ -1,4 +1,4 @@
-﻿"""FactorDataLoader: backtest data and stock pool via datahub Stock and Calendar.
+"""FactorDataLoader: backtest data and stock pool via datahub Stock and Calendar.
 
 from infrastructure.config.settings import StockConfig
 from infrastructure.errors.exceptions import DataLoadError, StockPoolError
@@ -7,7 +7,6 @@ from infrastructure.errors.exceptions import DataLoadError, StockPoolError
 
 from __future__ import annotations
 
-from datahub.entries import Calendar, Stock
 from datahub.loaders.base import BaseDataLoader
 from datahub.loaders.stock_loader import _get_stock_pool_from_datahub
 from infrastructure.config.settings import Settings
@@ -22,10 +21,12 @@ class FactorDataLoader(BaseDataLoader):
 
     def __init__(
         self,
-        stock: Stock | None = None,
-        calendar: Calendar | None = None,
+        stock: "Stock | None" = None,
+        calendar: "Calendar | None" = None,
     ) -> None:
         super().__init__()
+        # 延迟导入，避免循环依赖
+        from datahub.entries import Stock, Calendar
         self._stock = stock or Stock()
         self._calendar = calendar or Calendar()
 

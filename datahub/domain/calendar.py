@@ -1,4 +1,4 @@
-"""Calendar domain: uses exchange_calendars library for accurate trade dates."""
+﻿"""Calendar domain: uses exchange_calendars library for accurate trade dates."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class Calendar:
         Uses exchange_calendars for accurate Chinese stock market holidays.
         """
         try:
-            # Validate date format
+            # Validate datetime format
             if not start_date or not end_date or len(start_date) != 8 or len(end_date) != 8:
                 return []
             
@@ -40,7 +40,7 @@ class Calendar:
             return []
 
     def is_trade_day(self, date: str) -> bool:
-        """Return True if date is a trade day (YYYYMMDD).
+        """Return True if datetime is a trade day (YYYYMMDD).
         
         Uses exchange_calendars for accurate Chinese stock market holidays.
         """
@@ -52,11 +52,11 @@ class Calendar:
             return False
 
     def get_latest_trade_date(self, before_date: str) -> str | None:
-        """Return the latest trade date strictly before before_date (YYYYMMDD), or None.
+        """Return the latest trade datetime strictly before before_date (YYYYMMDD), or None.
         
         Uses exchange_calendars for accurate Chinese stock market holidays.
         
-        Note: Returns the latest trade date < before_date (not <=)
+        Note: Returns the latest trade datetime < before_date (not <=)
         """
         try:
             # Convert YYYYMMDD to pandas Timestamp format
@@ -85,5 +85,5 @@ class Calendar:
         except Exception as e:
             # Log error for debugging
             logger = logging.getLogger(__name__)
-            logger.warning(f"Failed to get latest trade date before {before_date}: {e}")
+            logger.warning(f"Failed to get latest trade datetime before {before_date}: {e}")
             return None

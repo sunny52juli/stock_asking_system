@@ -1,4 +1,4 @@
-"""Agent 工具模块 - 桥接 Deep Agent 与本地执行逻辑.
+﻿"""Agent 工具模块 - 桥接 Deep Agent 与本地执行逻辑.
 
 模块化设计:
 - bridge: 主入口，创建所有桥接工具

@@ -87,7 +87,11 @@ class PipelineExecutor:
         # 应用参数映射
         for param_name, source_field in step.param_mapping.items():
             if hasattr(query, source_field):
-                params[param_name] = getattr(query, source_field)
+                value = getattr(query, source_field)
+                # 如果值是列表，转换为逗号分隔的字符串（Tushare API要求）
+                if isinstance(value, list):
+                    value = ','.join(value)
+                params[param_name] = value
         
         # 应用固定参数
         if step.fixed_params:

@@ -1,4 +1,4 @@
-"""Math 工具执行器 - 数学变换类工具."""
+﻿"""Math 工具执行器 - 数学变换类工具."""
 
 from __future__ import annotations
 import polars as pl

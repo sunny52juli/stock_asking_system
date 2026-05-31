@@ -1,4 +1,4 @@
-"""DataService: optional generic API (query, get_dates, exists, latest, info). Domain access via stock(), fund(), index(), etc."""
+﻿"""DataService: optional generic API (query, get_dates, exists, latest, info). Domain access via stock(), fund(), index(), etc."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Tests for stock_asking_system.
+﻿"""Tests for stock_asking_system.
 
 测试目录结构:
 tests/

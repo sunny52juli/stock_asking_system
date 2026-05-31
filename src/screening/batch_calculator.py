@@ -173,7 +173,7 @@ class BatchCalculator:
         data_insufficient_count = len(stock_day_counts) - len(sufficient_stocks)
         
         # 检查是否包含最新日期
-        # Polars: trade_date 可能是 date/datetime 类型，需要转换后比较
+        # Polars: trade_date 可能是 datetime/datetime 类型，需要转换后比较
         latest_date_str = str(self.latest_date)
         
         # 统一日期格式：提取 YYYYMMDD 部分
@@ -249,9 +249,10 @@ class BatchCalculator:
         if not matched_stocks:
             return []
         
-        # 批量获取股票名称和行业
+        # 批量获取股票名称、行业和概念
         name_map = self._get_stock_names_batch(valid_data, matched_stocks)
         industry_map = self._get_stock_industries_batch(valid_data, matched_stocks)
+        concepts_map = self._get_stock_concepts_batch(matched_stocks)
         
         # 提取指标数据（包括所有工具计算的变量）
         metrics_dict: dict[str, list[float]] = {}
@@ -292,6 +293,7 @@ class BatchCalculator:
             "ts_code": matched_stocks,
             "name": [name_map.get(code, code) for code in matched_stocks],
             "industry": [industry_map.get(code, "N/A") for code in matched_stocks],
+            "ths_concepts": [concepts_map.get(code, "") for code in matched_stocks],
             "reason": [rationale] * n_stocks,
         })
         
@@ -310,13 +312,14 @@ class BatchCalculator:
             # 提取 metrics（移除基础字段）
             metrics = {
                 k: v for k, v in row.items() 
-                if k not in ["ts_code", "name", "industry", "reason"] and v is not None
+                if k not in ["ts_code", "name", "industry", "ths_concepts", "reason"] and v is not None
             }
             
             candidates.append({
                 "ts_code": row["ts_code"],
                 "name": row["name"],
                 "industry": row["industry"],
+                "ths_concepts": row.get("ths_concepts", ""),
                 "reason": row["reason"],
                 "metrics": metrics,
             })
@@ -447,6 +450,45 @@ class BatchCalculator:
             }
         except Exception:
             return {code: "N/A" for code in stock_codes}
+    
+    @staticmethod
+    def _get_stock_concepts_batch(stock_codes: list[str]) -> dict[str, str]:
+        """批量获取股票概念信息.
+        
+        Args:
+            stock_codes: 股票代码列表
+            
+        Returns:
+            {ts_code: ths_concepts} 字典，概念用 | 分隔
+        """
+        try:
+            from datahub.loaders import get_ths_concepts, aggregate_ths_concepts_by_stock
+            from datetime import datetime
+            
+            # 获取最新交易日期
+            trade_date = datetime.now().strftime("%Y%m%d")
+            
+            # 加载概念数据
+            concept_df = get_ths_concepts(trade_date)
+            if concept_df.is_empty():
+                return {code: "" for code in stock_codes}
+            
+            # 聚合概念信息
+            concepts_agg = aggregate_ths_concepts_by_stock(concept_df)
+            if concepts_agg.is_empty():
+                return {code: "" for code in stock_codes}
+            
+            # 转换为字典
+            concepts_dict = dict(zip(concepts_agg["ts_code"], concepts_agg["ths_concepts"]))
+            
+            # 只返回需要的股票
+            return {
+                code: (concepts_dict.get(code, "") or "")
+                for code in stock_codes
+            }
+        except Exception as e:
+            logger.debug(f"   ⚠️ 获取概念信息失败: {e}")
+            return {code: "" for code in stock_codes}
 
     @staticmethod
     def _print_logic_summary(expression: str, main_tools: list[dict]):

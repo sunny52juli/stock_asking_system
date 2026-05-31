@@ -1,4 +1,4 @@
-"""自动注册装饰器 - 简化版.
+﻿"""自动注册装饰器 - 简化版.
 
 使用方式:
     @tool_registry.register(description="工具描述", category="math")

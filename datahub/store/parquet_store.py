@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 from pathlib import Path
 import polars as pl
 
@@ -98,7 +98,7 @@ class ParquetStore(Repository):
 
     def available_dates(self, dataset: Dataset) -> list[str]:
         meta, _ = DatasetRegistry.get(dataset)
-        if meta.partition_by != "date":
+        if meta.partition_by != "datetime":
             return []
         directory = self.root / meta.storage_path
         if not directory.exists():
@@ -133,10 +133,14 @@ class ParquetStore(Repository):
         index_code_safe = ""
         if query.index_code:
             index_code_safe = query.index_code.replace(".", "_")
-        return meta.partition_key_template.format(
+        
+        partition_key = meta.partition_key_template.format(
+            datetime=query.date or "",
             date=query.date or "",
             index_code=index_code_safe,
         )
+        
+        return partition_key
 
     def _filter_dates(
         self,

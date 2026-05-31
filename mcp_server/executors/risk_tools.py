@@ -1,4 +1,4 @@
-"""风险指标和筛选工具执行器."""
+﻿"""风险指标和筛选工具执行器."""
 
 from __future__ import annotations
 import polars as pl

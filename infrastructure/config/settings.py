@@ -72,7 +72,9 @@ class StockPoolConfig(BaseModel):
     min_list_days: int = Field(default=180, gt=0)
     exclude_st: bool = Field(default=True)
     exclude_suspended: bool = Field(default=True)
-    industry: list[str] | None = Field(default=None)  # 行业过滤列表（支持模糊匹配），None表示全市场
+    industry: list[str] | None = Field(default=None)  # 行业过滤列表（支持模糊匹配），None表示全市场（已废弃，使用 ths_concept）
+    ths_concept: list[str] | None = Field(default=None)  # 同花顺概念过滤列表（OR关系），None表示全市场
+    ths_hot: int | None = Field(default=None)  # 同花顺热门股数量，0或None表示不起效
 
     # 数据质量参数
     min_completeness_ratio: float = Field(default=0.8, ge=0.0, le=1.0)

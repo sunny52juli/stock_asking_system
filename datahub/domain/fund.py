@@ -1,4 +1,4 @@
-"""Fund domain API: nav."""
+﻿"""Fund domain API: nav."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ class Fund:
         codes: list[str] | None = None,
         fields: list[str] | None = None,
     ) -> "pd.DataFrame":
-        """Fund NAV. Single date or range."""
+        """Fund NAV. Single datetime or range."""
         return load_with_date_or_range(
             self._repo,
             Dataset.FUND_NAV,
@@ -40,7 +40,7 @@ class Fund:
         return self._repo.available_dates(Dataset.FUND_NAV)
 
     def latest_date(self) -> str | None:
-        """Latest available date for fund nav dataset."""
+        """Latest available datetime for fund nav dataset."""
         return self._repo.latest_date(Dataset.FUND_NAV)
 
     def universe(

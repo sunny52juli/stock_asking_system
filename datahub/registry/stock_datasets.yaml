@@ -6,12 +6,12 @@ datasets:
   STOCK_DAILY:
     meta:
       domain: "stock"
-      partition_by: "date"
+      partition_by: "datetime"
       key_columns: ["ts_code", "trade_date"]
       storage_path: "stock/daily"
       date_column: "trade_date"
       code_column: "ts_code"
-      partition_key_template: "{date}"
+      partition_key_template: "{datetime}"
       description: "股票日线行情数据（含基本信息、每日指标、复权因子、资金流向、融资融券）"
     
     pipeline:
@@ -132,26 +132,6 @@ datasets:
         merge_on: ["ts_code", "trade_date"]
         optional: true
 
-  # STOCK_INDEX_WEIGHT: 指数成分股权重
-  STOCK_INDEX_WEIGHT:
-    meta:
-      domain: "stock"
-      partition_by: "composite"
-      key_columns: ["index_code", "con_code", "trade_date"]
-      storage_path: "stock/index_weight"
-      date_column: "trade_date"
-      code_column: "con_code"
-      partition_key_template: "{index_code}_{date}"
-      description: "指数成分股权重数据"
-    
-    pipeline:
-      - api_name: "index_weight"
-        param_mapping:
-          trade_date: "date"
-          index_code: "index_code"
-        fields: null
-        merge_on: []
-
   # STOCK_BASIC: 股票基本信息列表快照
   STOCK_BASIC:
     meta:
@@ -180,16 +160,30 @@ datasets:
           - "list_date"
         merge_on: []
 
+  # THS_CONCEPT: 同花顺概念成分股
+  THS_CONCEPT:
+    meta:
+      domain: "index"
+      partition_by: "datetime"
+      key_columns: ["concept_code", "stock_code"]
+      storage_path: "ths_concept/monthly"
+      date_column: ""
+      code_column: "stock_code"
+      partition_key_template: "{date}"
+      description: "同花顺概念成分股数据（按月缓存）"
+    
+    pipeline: []
+
   # STOCK_VALUATION: 股票估值指标
   STOCK_VALUATION:
     meta:
       domain: "stock"
-      partition_by: "date"
+      partition_by: "datetime"
       key_columns: ["ts_code", "trade_date"]
       storage_path: "stock/valuation"
       date_column: "trade_date"
       code_column: "ts_code"
-      partition_key_template: "{date}"
+      partition_key_template: "{datetime}"
       description: "股票估值指标（PE/PB/PS/股息率/量比/换手率/市值）"
     
     pipeline:

@@ -1,4 +1,4 @@
-"""Feature domain — cross-sectional factor computation and analytics."""
+﻿"""Feature domain — cross-sectional factor computation and analytics."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ except ImportError:
 from datahub.protocols import StockProtocol
 
 # Import directly from polars_tools module file to avoid circular import through utils.__init__
-from utils.polars_tools import pivot_wide
+from utils.data import pivot_wide
 _FACTOR_REGISTRY: dict[str, dict] = {
     "momentum_1m": {
         "description": "1个月价格动量(近21日收益率)",
@@ -230,7 +230,7 @@ class Feature:
     ) -> pd.DataFrame:
         """Factor value panel over time (long format: ts_code, trade_date, + factors).
 
-        Computes rolling cross-sections; may be slow for large date ranges.
+        Computes rolling cross-sections; may be slow for large datetime ranges.
         """
         factor_list = _to_factor_list(factors)
         max_window = max(

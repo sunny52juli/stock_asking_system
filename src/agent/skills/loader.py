@@ -1,4 +1,4 @@
-"""Skills 加载器 - 三层渐进加载机制.
+﻿"""Skills 加载器 - 三层渐进加载机制.
 
 from pathlib import Path
 - Layer 1: YAML frontmatter（metadata）- 始终加载到 system prompt

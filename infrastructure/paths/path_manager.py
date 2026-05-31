@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 from utils.path_manager import PathManager, ensure_project_path
 from utils.path_manager import ensure_project_path

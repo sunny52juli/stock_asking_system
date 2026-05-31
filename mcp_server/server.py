@@ -1,4 +1,4 @@
-"""Stock Asking MCP Server - 独立的 MCP 服务器.
+﻿"""Stock Asking MCP Server - 独立的 MCP 服务器.
 
 基于 FastMCP 框架，提供量化工具服务。
 可直接运行: python -m mcp_server.server

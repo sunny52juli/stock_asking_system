@@ -1,4 +1,4 @@
-"""CLI argument definitions: subparsers and options per product/action."""
+﻿"""CLI argument definitions: subparsers and options per product/action."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import Any
 
 
 def _add_common_date_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--date", type=str, help="Single date YYYYMMDD")
-    parser.add_argument("--start-date", type=str, dest="start_date", help="Range start YYYYMMDD")
-    parser.add_argument("--end-date", type=str, dest="end_date", help="Range end YYYYMMDD")
+    parser.add_argument("--datetime", type=str, help="Single datetime YYYYMMDD")
+    parser.add_argument("--start-datetime", type=str, dest="start_date", help="Range start YYYYMMDD")
+    parser.add_argument("--end-datetime", type=str, dest="end_date", help="Range end YYYYMMDD")
 
 
 def _add_codes_fields(parser: argparse.ArgumentParser) -> None:
@@ -45,7 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     stock_p = sub.add_parser("stock", help="Stock data")
     stock_actions = stock_p.add_subparsers(dest="action", required=True)
 
-    p = stock_actions.add_parser("price", help="Daily quotes (single date or range)")
+    p = stock_actions.add_parser("price", help="Daily quotes (single datetime or range)")
     _add_common_date_args(p)
     _add_codes_fields(p)
 
@@ -59,14 +59,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = stock_actions.add_parser("available-dates", help="Available trade dates")
     # no args
 
-    p = stock_actions.add_parser("latest-date", help="Latest available date")
+    p = stock_actions.add_parser("latest-datetime", help="Latest available datetime")
     # no args
 
     # ---- fund ----
     fund_p = sub.add_parser("fund", help="Fund data")
     fund_actions = fund_p.add_subparsers(dest="action", required=True)
 
-    p = fund_actions.add_parser("nav", help="Fund NAV (single date or range)")
+    p = fund_actions.add_parser("nav", help="Fund NAV (single datetime or range)")
     _add_common_date_args(p)
     _add_codes_fields(p)
 
@@ -76,7 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--status", type=str, default="active")
 
     p = fund_actions.add_parser("available-dates", help="Available NAV dates")
-    p = fund_actions.add_parser("latest-date", help="Latest NAV date")
+    p = fund_actions.add_parser("latest-datetime", help="Latest NAV datetime")
 
     # ---- index ----
     index_p = sub.add_parser("index", help="Index data")
@@ -88,13 +88,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = index_actions.add_parser("level", help="Index level (OHLC) over range")
     p.add_argument("index_code", type=str, help="Index code")
-    p.add_argument("--start-date", type=str, dest="start_date", required=True)
-    p.add_argument("--end-date", type=str, dest="end_date", required=True)
+    p.add_argument("--start-datetime", type=str, dest="start_date", required=True)
+    p.add_argument("--end-datetime", type=str, dest="end_date", required=True)
     p.add_argument("--freq", type=str, default="daily")
 
     p = index_actions.add_parser("available-dates", help="Available dates")
     p.add_argument("--index-code", type=str, dest="index_code", default=None)
-    p = index_actions.add_parser("latest-date", help="Latest date")
+    p = index_actions.add_parser("latest-datetime", help="Latest datetime")
     p.add_argument("--index-code", type=str, dest="index_code", default=None)
 
     # ---- news ----
@@ -111,8 +111,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = news_actions.add_parser("events", help="Events")
     p.add_argument("--code", type=str, default=None)
-    p.add_argument("--start-date", type=str, dest="start_date", default=None)
-    p.add_argument("--end-date", type=str, dest="end_date", default=None)
+    p.add_argument("--start-datetime", type=str, dest="start_date", default=None)
+    p.add_argument("--end-datetime", type=str, dest="end_date", default=None)
     p.add_argument(
         "--event-type",
         type=str,
@@ -134,9 +134,9 @@ def build_parser() -> argparse.ArgumentParser:
     feature_p = sub.add_parser("feature", help="Factor/feature data")
     feature_actions = feature_p.add_subparsers(dest="action", required=True)
 
-    p = feature_actions.add_parser("snapshot", help="Factor snapshot at a date")
+    p = feature_actions.add_parser("snapshot", help="Factor snapshot at a datetime")
     p.add_argument("--factors", type=str, required=True, help="Comma-separated factor names")
-    p.add_argument("--date", type=str, required=True, help="Date YYYYMMDD")
+    p.add_argument("--datetime", type=str, required=True, help="Date YYYYMMDD")
     p.add_argument("--universe", type=str, default=None, help="Comma-separated codes (optional)")
 
     p = feature_actions.add_parser("list-factors", help="List available factors")
@@ -153,8 +153,8 @@ def get_opts(ns: argparse.Namespace) -> dict[str, Any]:
         "mode": getattr(ns, "mode", "auto"),
         "token": getattr(ns, "token", None),
     }
-    if hasattr(ns, "date") and ns.date is not None:
-        opts["date"] = ns.date
+    if hasattr(ns, "datetime") and ns.date is not None:
+        opts["datetime"] = ns.date
     if hasattr(ns, "start_date") and getattr(ns, "start_date", None) is not None:
         opts["start_date"] = ns.start_date
     if hasattr(ns, "end_date") and getattr(ns, "end_date", None) is not None:

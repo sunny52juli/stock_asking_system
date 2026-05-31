@@ -1,4 +1,4 @@
-"""特征工程工具执行器 - 时间序列排名、衰减加权等.
+﻿"""特征工程工具执行器 - 时间序列排名、衰减加权等.
 
 Uses polars for performance-critical operations on stock data.
 """

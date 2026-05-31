@@ -1,4 +1,4 @@
-"""统计工具执行器 - 相关系数、偏度、峰度等."""
+﻿"""统计工具执行器 - 相关系数、偏度、峰度等."""
 
 from __future__ import annotations
 import polars as pl

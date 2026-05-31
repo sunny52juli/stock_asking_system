@@ -1,4 +1,4 @@
-"""工具执行器 - 统一调用 MCP 工具."""
+﻿"""工具执行器 - 统一调用 MCP 工具."""
 
 from __future__ import annotations
 

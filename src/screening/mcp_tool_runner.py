@@ -1,4 +1,4 @@
-"""工具执行器 - 负责执行 MCP 工具并管理依赖."""
+﻿"""工具执行器 - 负责执行 MCP 工具并管理依赖."""
 
 from __future__ import annotations
 

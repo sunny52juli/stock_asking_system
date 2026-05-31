@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Hook 脚本：结果质量门禁.
 
 Exit codes:

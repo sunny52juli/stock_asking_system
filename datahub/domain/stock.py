@@ -43,26 +43,61 @@ class Stock:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> "pd.DataFrame":
-        """Index constituents and weights. Single date or range."""
-        return load_with_date_or_range(
-            self._repo,
-            Dataset.STOCK_INDEX_WEIGHT,
-            date=date,
-            start_date=start_date,
-            end_date=end_date,
-            index_code=index_code,
-        )
+        """获取指数成分股列表（已简化）。
+        
+        注意：此功能已弃用，如需获取指数成分股，建议直接使用 Tushare API。
+        """
+        logger.warning("[WARN] Stock.universe_by_index() 已弃用")
+        return pl.DataFrame()
 
     def universe(self) -> "pl.DataFrame":
         """Stock basic listing info (single snapshot)."""
         return self._repo.load(Query(dataset=Dataset.STOCK_BASIC, date="basic"))
+    
+    def universe_with_concepts(self, force_reload: bool = False) -> "pl.DataFrame":
+        """Stock basic info with concepts merged.
+        
+        Args:
+            force_reload: 是否强制重新加载概念数据（当前未使用，每次从 API 获取）
+            
+        Returns:
+            DataFrame with columns: ts_code, symbol, name, area, industry, market, list_date, concepts
+        """
+        from datahub.loaders.ths_concept_loader import get_ths_concepts, aggregate_ths_concepts_by_stock
+        from datetime import datetime
+        
+        basic = self.universe()
+        if basic.is_empty():
+            return basic
+        
+        # 直接从 API 获取概念数据，不使用缓存
+        trade_date = datetime.now().strftime("%Y%m%d")
+        concept_df = get_ths_concepts(trade_date)
+        
+        if concept_df.is_empty():
+            logger.warning("[WARN] 未获取到概念数据")
+            return basic.with_columns(pl.lit("").alias("concepts"))
+        
+        # 聚合概念信息
+        concepts_agg = aggregate_ths_concepts_by_stock(concept_df)
+        
+        # 合并到 basic
+        result = basic.join(concepts_agg, on="ts_code", how="left")
+        result = result.with_columns(
+            pl.col("ths_concepts").fill_null("").alias("concepts")
+        )
+        
+        if "ths_concepts" in result.columns:
+            result = result.drop("ths_concepts")
+        
+        return result
 
     def available_dates(self) -> list[str]:
         """Available dates for daily dataset."""
         return self._repo.available_dates(Dataset.STOCK_DAILY)
 
     def latest_date(self) -> str | None:
-        """Latest available date for daily dataset."""
+        """Latest available datetime for daily dataset."""
         return self._repo.latest_date(Dataset.STOCK_DAILY)
 
     # ------------------------------------------------------------------
@@ -80,7 +115,7 @@ class Stock:
         fields: list[str] | None = None,
         index_code: str | None = None,
     ) -> Query:
-        """Build a Query, routing to date or range mode."""
+        """Build a Query, routing to datetime or range mode."""
         if date is not None:
             return Query(
                 dataset=dataset,
@@ -98,7 +133,7 @@ class Stock:
                 fields=fields,
                 index_code=index_code,
             )
-        raise ValueError("Provide either date or (start_date, end_date)")
+        raise ValueError("Provide either datetime or (start_date, end_date)")
 
     # ------------------------------------------------------------------
     # 2. PRICE & RETURNS

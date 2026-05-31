@@ -1,4 +1,4 @@
-"""筛选执行器 - 负责高效执行股票筛选逻辑.
+﻿"""筛选执行器 - 负责高效执行股票筛选逻辑.
 
 本模块从 utils/screening/stock_screener.py 重构而来，
 职责更加清晰，命名更加语义化。
@@ -99,106 +99,82 @@ class ScreeningExecutor:
             screening_logic=screening_logic
         )
         
-        # ✅ 核心改进：只从 confidence_formula 中提取指标进行截面归一化打分
+        # ✅ 核心改进：使用 confidence_weights 字典格式进行加权打分
         # expression 仅用于过滤，不参与打分
         expression = screening_logic.get("expression", "")
-        confidence_formula = screening_logic.get("confidence_formula", "")
+        confidence_weights = screening_logic.get("confidence_weights")
         
-        if candidates and confidence_formula:
+        if candidates and confidence_weights and isinstance(confidence_weights, dict):
             try:
-                import re
+                # ✅ 直接使用 confidence_weights 字典
+                scoring_vars = set(confidence_weights.keys())
+                var_weights = confidence_weights.copy()
+                logger.info(f"📊 综合评分指标: {', '.join(sorted(scoring_vars))}")
                 
-                # ✅ 只从 confidence_formula 提取变量作为打分指标
-                scoring_vars = set()
-                vars_from_formula = re.findall(r'[a-zA-Z_]\w*', confidence_formula)
-                scoring_vars.update([v for v in vars_from_formula if v not in ['sqrt', 'abs', 'log', 'exp', 'rank_normalize', 'zscore_normalize'] and not v.isdigit()])
+                # ✅ 验证权重定义的完整性
+                defined_vars = set(var_weights.keys())
+                undefined_vars = scoring_vars - defined_vars
                 
-                if scoring_vars:
-                    logger.info(f"📊 综合评分指标: {', '.join(sorted(scoring_vars))}")
-                    
-                    # 2. 收集所有候选股票中各指标的原始值
-                    metrics_data = {var: [] for var in scoring_vars}
-                    for c in candidates:
-                        for var in scoring_vars:
-                            # 如果指标不存在于 metrics 中，使用默认值 0
-                            metrics_data[var].append(c["metrics"].get(var, 0))
-                    
-                    # 3. ✅ 对每个指标进行 Min-Max 截面归一化 (0-1)
-                    normalized_data = {}
-                    for var, values in metrics_data.items():
-                        min_val = min(values)
-                        max_val = max(values)
-                        range_val = max_val - min_val if max_val != min_val else 1.0
-                        normalized_data[var] = [(v - min_val) / range_val for v in values]
-                    
-                    # 4. ✅ 解析 confidence_formula 中的权重并归一化
+                if undefined_vars:
+                    # 部分变量缺少权重定义 → 回退等权
+                    logger.warning(f"⚠️ confidence_weights 权重定义不完整")
+                    logger.warning(f"   已定义: {', '.join(sorted(defined_vars))}")
+                    logger.warning(f"   缺失: {', '.join(sorted(undefined_vars))}")
+                    logger.warning(f"   → 回退到等权分配")
                     var_weights = {}
-                    if confidence_formula:
-                        # ✅ 改进：先提取所有评分变量，然后尝试从 formula 中提取权重
-                        # 策略：如果 formula 中包含 "var * weight" 或 "weight * var" 模式，则提取权重
-                        # 否则使用等权分配
-                        
-                        # 简化策略：直接查找每个 scoring_var 后面是否跟着 * weight
-                        for var in scoring_vars:
-                            # 匹配模式：var * weight 或 var) * weight（处理函数调用后）
-                            pattern = rf'{re.escape(var)}\s*\)\s*\*\s*(-?[0-9]+\.?[0-9]*)|{re.escape(var)}\s*\*\s*(-?[0-9]+\.?[0-9]*)'
-                            match = re.search(pattern, confidence_formula)
-                            if match:
-                                weight_str = match.group(1) or match.group(2)
-                                var_weights[var] = float(weight_str)
-                        
-                        # ✅ 严格验证：如果定义了权重，必须为所有变量定义
-                        if var_weights:
-                            defined_vars = set(var_weights.keys())
-                            undefined_vars = scoring_vars - defined_vars
-                            
-                            if undefined_vars:
-                                # 部分变量缺少权重定义 → 视为设计失败，回退等权
-                                logger.warning(f"⚠️ confidence_formula 权重定义不完整")
-                                logger.warning(f"   已定义: {', '.join(sorted(defined_vars))}")
-                                logger.warning(f"   缺失: {', '.join(sorted(undefined_vars))}")
-                                logger.warning(f"   → 回退到等权分配（请修正 confidence_formula）")
-                                var_weights = {}
-                            else:
-                                # 所有变量都有权重 → 归一化并使用
-                                total_weight = sum(var_weights.values())
-                                if total_weight > 0:
-                                    var_weights = {k: v / total_weight for k, v in var_weights.items()}
-                                    logger.info(f"✅ 使用自定义权重（已归一化）: {', '.join([f'{k}={v:.2f}' for k, v in sorted(var_weights.items())])}")
-                                else:
-                                    logger.warning("⚠️ 权重总和为0，回退到等权")
-                                    var_weights = {}
-                        else:
-                            logger.info("📐 未检测到权重定义，使用等权分配")
-                    
-                    # 5. ✅ 计算加权综合得分（先归一化，再按权重求和）
-                    n = len(candidates)
-                    scores = [0.0] * n
-                    
-                    if var_weights:
-                        # 使用自定义权重（每个指标已经过 Min-Max 归一化）
-                        for var, weight in var_weights.items():
-                            for i in range(n):
-                                scores[i] += normalized_data[var][i] * weight
+                else:
+                    # 所有变量都有权重 → 归一化并使用
+                    total_weight = sum(var_weights.values())
+                    if total_weight > 0:
+                        var_weights = {k: v / total_weight for k, v in var_weights.items()}
+                        logger.info(f"✅ 使用自定义权重（已归一化）: {', '.join([f'{k}={v:.2f}' for k, v in sorted(var_weights.items())])}")
                     else:
-                        # 等权分配
-                        weight = 1.0 / len(scoring_vars)
-                        for var in scoring_vars:
-                            for i in range(n):
-                                scores[i] += normalized_data[var][i] * weight
-                        logger.info(f"📐 使用等权分配: 每个指标权重={weight:.2f}")
-                    
-                    # ✅ 将综合得分保存到每个候选股票的 confidence 字段
-                    for i, candidate in enumerate(candidates):
-                        candidate["confidence"] = scores[i]
-                    
-                    # 6. 按得分降序排列
-                    paired = list(zip(scores, candidates))
-                    paired.sort(key=lambda x: x[0], reverse=True)
-                    candidates = [c for _, c in paired]
+                        logger.warning("⚠️ 权重总和为0，回退到等权")
+                        var_weights = {}
+                
+                # ✅ 收集所有候选股票中各指标的原始值
+                metrics_data = {var: [] for var in scoring_vars}
+                for c in candidates:
+                    for var in scoring_vars:
+                        # 如果指标不存在于 metrics 中，使用默认值 0
+                        metrics_data[var].append(c["metrics"].get(var, 0))
+                
+                # ✅ 对每个指标进行 Min-Max 截面归一化 (0-1)
+                normalized_data = {}
+                for var, values in metrics_data.items():
+                    min_val = min(values)
+                    max_val = max(values)
+                    range_val = max_val - min_val if max_val != min_val else 1.0
+                    normalized_data[var] = [(v - min_val) / range_val for v in values]
+                
+                # ✅ 计算加权综合得分（先归一化，再按权重求和）
+                n = len(candidates)
+                scores = [0.0] * n
+                
+                if var_weights:
+                    # 使用自定义权重（每个指标已经过 Min-Max 归一化）
+                    for var, weight in var_weights.items():
+                        for i in range(n):
+                            scores[i] += normalized_data[var][i] * weight
+                else:
+                    # 等权分配
+                    weight = 1.0 / len(scoring_vars)
+                    for var in scoring_vars:
+                        for i in range(n):
+                            scores[i] += normalized_data[var][i] * weight
+                    logger.info(f"📐 使用等权分配: 每个指标权重={weight:.2f}")
+                
+                # ✅ 将综合得分保存到每个候选股票的 confidence 字段
+                for i, candidate in enumerate(candidates):
+                    candidate["confidence"] = scores[i]
+                
+                # ✅ 按得分降序排列
+                paired = list(zip(scores, candidates))
+                paired.sort(key=lambda x: x[0], reverse=True)
+                candidates = [c for _, c in paired]
             except Exception as e:
-                # ✅ 即使解析失败，也使用等权分配，不回退到按第一个指标排序
-                logger.error(f"❌ 得分公式解析异常: {e}，强制使用等权分配")
+                # ✅ 即使处理失败，也使用等权分配
+                logger.error(f"❌ 置信度打分异常: {e}，强制使用等权分配")
                 
                 # 重新执行等权分配逻辑
                 n = len(candidates)

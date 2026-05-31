@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """PostToolUse Hook - 验证 run_screening 工具的阈值合理性.
 
 基于 .stock_asking/rules/tool-value-ranges.md 的规则，

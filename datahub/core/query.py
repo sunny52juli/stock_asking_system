@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 
@@ -19,9 +19,9 @@ class Query:
         has_single = self.date is not None
         has_range = self.start_date is not None and self.end_date is not None
         if not has_single and not has_range:
-            raise ValueError("Query requires either 'date' or both 'start_date' and 'end_date'")
+            raise ValueError("Query requires either 'datetime' or both 'start_date' and 'end_date'")
         if has_single and has_range:
-            raise ValueError("Query cannot have both 'date' and 'start_date'/'end_date'")
+            raise ValueError("Query cannot have both 'datetime' and 'start_date'/'end_date'")
 
     @property
     def is_range(self) -> bool:

@@ -1,4 +1,4 @@
-"""Tests for datahub src modules (repository, query, dataset)."""
+﻿"""Tests for datahub src modules (repository, query, dataset)."""
 
 import pytest
 import pandas as pd
@@ -46,7 +46,7 @@ class TestQuery:
     def test_query_validation(self):
         """测试查询参数验证。"""
         
-        # 同时提供 date 和日期范围应该报错
+        # 同时提供 datetime 和日期范围应该报错
         with pytest.raises(ValueError):
             Query(
                 dataset=Dataset.STOCK_DAILY,
@@ -75,17 +75,17 @@ class TestDatasetMeta:
         meta = DatasetMeta(
             dataset=Dataset.STOCK_DAILY,
             domain='stock',
-            partition_by='date',
+            partition_by='datetime',
             key_columns=['ts_code', 'trade_date'],
             storage_path='stock/daily',
             date_column='trade_date',
             code_column='ts_code',
-            partition_key_template='{date}',
+            partition_key_template='{datetime}',
             description='股票日线数据'
         )
         
         assert meta.dataset == Dataset.STOCK_DAILY
-        assert meta.partition_by == 'date'
+        assert meta.partition_by == 'datetime'
         assert meta.date_column == 'trade_date'
 
 
@@ -100,12 +100,12 @@ class TestDatasetRegistry:
         meta = DatasetMeta(
             dataset=test_dataset,
             domain='test',
-            partition_by='date',
+            partition_by='datetime',
             key_columns=['ts_code'],
             storage_path='test',
             date_column='trade_date',
             code_column='ts_code',
-            partition_key_template='{date}',
+            partition_key_template='{datetime}',
             description='Test dataset'
         )
         pipeline = [FetchStep(api_name='test_api', param_mapping={})]
@@ -158,12 +158,12 @@ class TestSyncRepository:
         meta = DatasetMeta(
             dataset=Dataset.STOCK_DAILY,
             domain='stock',
-            partition_by='date',
+            partition_by='datetime',
             key_columns=['ts_code'],
             storage_path='stock/daily',
             date_column='trade_date',
             code_column='ts_code',
-            partition_key_template='{date}',
+            partition_key_template='{datetime}',
             description='Test'
         )
         mock_registry.get.return_value = (meta, [])
@@ -199,15 +199,15 @@ class TestSyncRepository:
         meta = DatasetMeta(
             dataset=Dataset.STOCK_DAILY,
             domain='stock',
-            partition_by='date',
+            partition_by='datetime',
             key_columns=['ts_code'],
             storage_path='stock/daily',
             date_column='trade_date',
             code_column='ts_code',
-            partition_key_template='{date}',
+            partition_key_template='{datetime}',
             description='Test'
         )
-        pipeline = [FetchStep(api_name='daily', param_mapping={'trade_date': 'date'})]
+        pipeline = [FetchStep(api_name='daily', param_mapping={'trade_date': 'datetime'})]
         mock_registry.get.return_value = (meta, pipeline)
         
         repo = SyncRepository(mock_store, mock_source, auto_save=False)

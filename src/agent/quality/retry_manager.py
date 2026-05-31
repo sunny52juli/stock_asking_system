@@ -1,112 +1,46 @@
-"""错误重试管理器 - 智能错误分类和参数调整.
+﻿"""错误重试管理器 - Agent 层的质量评估重试.
 
-from src.agent.memory import GraphDatabaseMemory
-- 6种错误类型分类（增强版）
-- 自动参数调整策略（支持筛选条件自适应）
-- 最大重试次数控制
-- 重试历史持久化到长期记忆
+本模块复用 infrastructure.retry.manager 的基础功能，并扩展：
+- 与长期记忆系统集成（持久化重试历史）
+- 指数退避延迟策略
+- Temperature 动态调整
+- 更细粒度的重试状态管理
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
+# 复用基础设施层的核心功能
+from infrastructure.retry.manager import (
+    ErrorType,
+    MAX_RETRY_COUNT,
+    RETRYABLE_ERRORS,
+    NON_RETRYABLE_ERRORS,
+    classify_error,
+    adjust_numeric_param,
+    generate_adjusted_params,
+    RetryRecord,
+)
+
+if TYPE_CHECKING:
+    from src.agent.memory import GraphDatabaseMemory
 
 logger = logging.getLogger(__name__)
 
 
-class ErrorType(Enum):
-    """错误类型枚举."""
+# 最大重试次数硬限制（从基础设施层导入，这里只是别名）
+# MAX_RETRY_COUNT 已在上面导入
 
-    PARAMETER_VALIDATION = "parameter_validation"  # 参数验证失败
-    TIMEOUT_ERROR = "timeout_error"                # 超时错误
-    NO_RESULTS = "no_results"                      # 无结果
-    CONFIG_ERROR = "config_error"                  # 配置错误
-    PERMISSION_DENIED = "permission_denied"        # 权限不足
-    TOOL_EXECUTION_ERROR = "tool_execution_error"  # 工具执行错误
-    DATA_LOADING_ERROR = "data_loading_error"      # 数据加载错误
-    LLM_API_ERROR = "llm_api_error"                # LLM API 错误
-    VALIDATION_ERROR = "validation_error"          # 验证错误
-    UNKNOWN_ERROR = "unknown_error"                # 未知错误
+# 可重试/不可重试的错误类型（从基础设施层导入）
+# RETRYABLE_ERRORS, NON_RETRYABLE_ERRORS 已在上面导入
 
-
-# 最大重试次数硬限制
-MAX_RETRY_COUNT = 3
-
-# 可重试的错误类型
-RETRYABLE_ERRORS = {
-    ErrorType.PARAMETER_VALIDATION,
-    ErrorType.TIMEOUT_ERROR,
-    ErrorType.NO_RESULTS,
-    ErrorType.TOOL_EXECUTION_ERROR,
-    ErrorType.LLM_API_ERROR,
-}
-
-# 不可重试的错误类型
-NON_RETRYABLE_ERRORS = {
-    ErrorType.CONFIG_ERROR,
-    ErrorType.PERMISSION_DENIED,
-}
-
-# 错误模式匹配规则
-ERROR_PATTERNS = {
-    ErrorType.PARAMETER_VALIDATION: [
-        r"invalid\s+parameter",
-        r"parameter\s+validation\s+failed",
-        r"value\s+out\s+of\s+range",
-        r"invalid\s+value",
-        r"参数.*无效",
-        r"参数.*验证.*失败",
-        r"值.*超出.*范围",
-    ],
-    ErrorType.TIMEOUT_ERROR: [
-        r"timeout",
-        r"timed?\s*out",
-        r"超时",
-        r"execution\s+time\s+exceeded",
-    ],
-    ErrorType.NO_RESULTS: [
-        r"no\s+results?",
-        r"empty\s+result",
-        r"无结果",
-        r"结果为空",
-        r"未找到.*股票",
-    ],
-    ErrorType.CONFIG_ERROR: [
-        r"config(uration)?\s+error",
-        r"invalid\s+config",
-        r"missing\s+config",
-        r"配置.*错误",
-        r"配置.*无效",
-    ],
-    ErrorType.PERMISSION_DENIED: [
-        r"permission\s+denied",
-        r"unauthorized",
-        r"forbidden",
-        r"access\s+denied",
-        r"权限.*不足",
-        r"无权.*访问",
-    ],
-}
-
-
-@dataclass
-class RetryRecord:
-    """重试记录 - 用于持久化到长期记忆."""
-
-    tool_name: str
-    error_type: str
-    original_params: dict[str, Any]
-    adjusted_params: dict[str, Any]
-    attempt_count: int
-    success: bool
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+# 错误模式匹配规则（从基础设施层导入）
+# ERROR_PATTERNS 已在 infrastructure.retry.manager 中定义
 
 
 @dataclass
@@ -127,7 +61,7 @@ class RetryState:
     attempt: int = 0
     max_retries: int = 3
     last_error: str = ""
-    last_error_type: ErrorType = ErrorType.UNKNOWN_ERROR
+    last_error_type: ErrorType = ErrorType.UNKNOWN
     adjusted_params: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -166,7 +100,7 @@ class RetryManager:
         self._retry_counts: dict[str, int] = {}  # 工具级别的重试计数
 
     def classify_error(self, error: Exception | str) -> ErrorType:
-        """分类错误类型 - 增强版（支持正则模式匹配）.
+        """分类错误类型 - 复用基础设施层的 classify_error 函数.
         
         Args:
             error: 异常对象或错误消息字符串
@@ -174,36 +108,8 @@ class RetryManager:
         Returns:
             ErrorType 枚举值
         """
-        error_str = str(error).lower()
-
-        # 先尝试正则模式匹配（更精确）
-        for error_type, patterns in ERROR_PATTERNS.items():
-            for pattern in patterns:
-                if re.search(pattern, error_str, re.IGNORECASE):
-                    return error_type
-
-        # 回退到关键词匹配
-        # 工具执行错误
-        if any(keyword in error_str for keyword in ["tool", "execution", "invoke"]):
-            return ErrorType.TOOL_EXECUTION_ERROR
-
-        # 数据加载错误
-        if any(keyword in error_str for keyword in ["data", "load", "fetch", "download"]):
-            return ErrorType.DATA_LOADING_ERROR
-
-        # LLM API 错误
-        if any(keyword in error_str for keyword in ["api", "rate limit", "quota", "openai", "deepseek"]):
-            return ErrorType.LLM_API_ERROR
-
-        # 验证错误
-        if any(keyword in error_str for keyword in ["validation", "invalid", "format"]):
-            return ErrorType.VALIDATION_ERROR
-
-        # 超时错误
-        if any(keyword in error_str for keyword in ["timeout", "timed out"]):
-            return ErrorType.TIMEOUT_ERROR
-
-        return ErrorType.UNKNOWN_ERROR
+        # 直接调用基础设施层的函数
+        return classify_error(error)
 
     def should_retry(self, error: Exception | str, tool_name: str = "") -> bool:
         """判断是否应该重试 - 增强版.
@@ -329,7 +235,7 @@ class RetryManager:
                 logger.warning(f"Failed to update retry success in memory: {e}")
 
     def _adjust_params_for_error(self, error_type: ErrorType, original_params: dict[str, Any]) -> dict[str, Any]:
-        """根据错误类型调整参数 - 增强版（支持筛选条件自适应）.
+        """根据错误类型调整参数 - 复用基础设施层的 generate_adjusted_params.
         
         Args:
             error_type: 错误类型
@@ -338,83 +244,9 @@ class RetryManager:
         Returns:
             调整后的参数字典
         """
-        adjusted = original_params.copy()
+        # 直接调用基础设施层的函数，传入空工具名（因为这里不需要工具特定的逻辑）
+        return generate_adjusted_params(error_type, "", original_params)
 
-        if error_type == ErrorType.PARAMETER_VALIDATION:
-            # 参数验证失败：放宽数值范围
-            if "top_n" in adjusted:
-                adjusted["top_n"] = self._adjust_numeric_param(adjusted["top_n"], "increase", 2.0)
-            if "threshold" in adjusted:
-                adjusted["threshold"] = self._adjust_numeric_param(adjusted["threshold"], "decrease", 2.0)
-            if "min_value" in adjusted:
-                adjusted["min_value"] = self._adjust_numeric_param(adjusted["min_value"], "decrease", 2.0)
-            if "max_value" in adjusted:
-                adjusted["max_value"] = self._adjust_numeric_param(adjusted["max_value"], "increase", 2.0)
-
-            # 处理 screening_logic_json 中的条件
-            if "screening_logic_json" in adjusted:
-                try:
-                    logic = json.loads(adjusted["screening_logic_json"])
-                    conditions = logic.get("conditions", [])
-                    for cond in conditions:
-                        if "value" in cond:
-                            operator = cond.get("operator", "")
-                            if operator == ">":
-                                # 放宽下限
-                                cond["value"] = self._adjust_numeric_param(cond["value"], "decrease", 1.5)
-                            elif operator == "<":
-                                # 放宽上限
-                                cond["value"] = self._adjust_numeric_param(cond["value"], "increase", 1.5)
-                    adjusted["screening_logic_json"] = json.dumps(logic, ensure_ascii=False)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-        elif error_type == ErrorType.TIMEOUT_ERROR:
-            # 超时：缩小数据范围
-            if "days" in adjusted:
-                adjusted["days"] = max(30, int(adjusted["days"] * 0.5))
-            if "limit" in adjusted:
-                adjusted["limit"] = max(10, int(adjusted["limit"] * 0.5))
-
-        elif error_type == ErrorType.NO_RESULTS:
-            # 无结果：放宽条件
-            if "top_n" in adjusted:
-                adjusted["top_n"] = self._adjust_numeric_param(adjusted["top_n"], "increase", 2.0)
-            if "min_score" in adjusted:
-                adjusted["min_score"] = self._adjust_numeric_param(adjusted["min_score"], "decrease", 2.0)
-
-        elif error_type == ErrorType.LLM_API_ERROR:
-            # API 错误：降低 temperature 提高稳定性
-            if self.config.adjust_temperature:
-                adjusted["temperature"] = 0.3
-
-        elif error_type == ErrorType.TOOL_EXECUTION_ERROR:
-            # 工具错误：稍微提高 temperature 增加多样性
-            if self.config.adjust_temperature:
-                adjusted["temperature"] = 0.9
-
-        return adjusted
-
-    @staticmethod
-    def _adjust_numeric_param(value: Any, operator: str, factor: float) -> Any:
-        """调整数值参数.
-        
-        Args:
-            value: 原始值
-            operator: 调整方向 (increase/decrease)
-            factor: 调整因子
-            
-        Returns:
-            调整后的值
-        """
-        if not isinstance(value, int | float):
-            return value
-
-        if operator == "increase":
-            return value * factor
-        elif operator == "decrease":
-            return value / factor
-        return value
 
     def _record_retry_to_memory(
         self,

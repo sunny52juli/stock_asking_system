@@ -79,6 +79,14 @@ class IndexDataLoader:
             # 合并所有指数数据
             combined_index_data = pl.concat(all_index_data)
             
+            # 去重：确保 (index_code, trade_date) 唯一
+            if 'index_code' in combined_index_data.columns and 'trade_date' in combined_index_data.columns:
+                before_count = len(combined_index_data)
+                combined_index_data = combined_index_data.unique(subset=['index_code', 'trade_date'], keep='first')
+                after_count = len(combined_index_data)
+                if before_count != after_count:
+                    logger.info(f"   [OK] 合并后去除 {before_count - after_count} 条重复记录")
+            
             logger.info(f"[OK] 成功加载 {len(index_codes)} 个指数数据，共 {len(combined_index_data)} 条记录")
             
             # 将指数数据合并到股票数据中
@@ -179,7 +187,7 @@ class IndexDataLoader:
         dates_pl = stock_data.select(pl.col("trade_date").unique()).to_series()
         if len(dates_pl) == 0:
             return None
-        # Polars: min/max 可能返回 datetime.date 或其他类型，需要转换
+        # Polars: min/max 可能返回 datetime.datetime 或其他类型，需要转换
         min_date = dates_pl.min()
         max_date = dates_pl.max()
         # 转换为字符串格式 YYYYMMDD
@@ -240,9 +248,17 @@ class IndexDataLoader:
         if "index_code" not in index_data.columns:
             index_data = index_data.with_columns(pl.lit(index_code).alias("index_code"))
         
+        # 去重：确保 (index_code, trade_date) 唯一
+        if 'index_code' in index_data.columns and 'trade_date' in index_data.columns:
+            before_count = len(index_data)
+            index_data = index_data.unique(subset=['index_code', 'trade_date'], keep='first')
+            after_count = len(index_data)
+            if before_count != after_count:
+                logger.info(f"   [OK] 指数 {index_code} 去除 {before_count - after_count} 条重复记录")
+        
         # 确保 trade_date 是日期类型
         if "trade_date" in index_data.columns:
-            # polars 中 trade_date 可能已经是 date/datetime 类型，无需转换
+            # polars 中 trade_date 可能已经是 datetime/datetime 类型，无需转换
             pass
         
         # 缓存结果（保持 polars 格式）

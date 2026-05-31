@@ -1,4 +1,4 @@
-"""Rules 加载器 - 从配置文件加载规则并注入到 system prompt.
+﻿"""Rules 加载器 - 从配置文件加载规则并注入到 system prompt.
 
 - 从 .stock_asking/rules/*.md 加载规则文件
 - 合并到 system prompt 中约束 Agent 行为

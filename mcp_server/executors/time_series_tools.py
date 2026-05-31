@@ -1,4 +1,4 @@
-"""Time Series 工具执行器 - 时间序列类工具.
+﻿"""Time Series 工具执行器 - 时间序列类工具.
 
 Uses polars for performance-critical rolling operations on stock data.
 """
@@ -6,7 +6,7 @@ Uses polars for performance-critical rolling operations on stock data.
 from __future__ import annotations
 import polars as pl
 from mcp_server.auto_register import tool_registry
-from utils.polars_tools import (
+from utils.data import (
     rolling_mean as pl_rolling_mean,
     rolling_std as pl_rolling_std,
     pct_change as pl_pct_change,

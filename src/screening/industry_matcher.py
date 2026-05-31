@@ -1,4 +1,4 @@
-"""行业匹配工具 - 使用 LLM 智能匹配行业."""
+﻿"""行业匹配工具 - 使用 LLM 智能匹配行业."""
 
 from __future__ import annotations
 

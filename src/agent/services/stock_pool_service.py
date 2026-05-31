@@ -26,6 +26,16 @@ logger = get_logger(__name__)
 class StockPoolService:
     """股票池服务 - 负责股票池的过滤和管理."""
     
+    # 默认加载的所有指数代码列表
+    DEFAULT_INDEX_CODES = [
+        "000001.SH",  # 上证指数
+        "399001.SZ",  # 深证成指
+        "399006.SZ",  # 创业板指
+        "000688.SH",  # 科创50
+        "899050.BJ",  # 北证50
+        "000300.SH",  # 沪深300
+    ]
+    
     def __init__(self, settings: Any):
         """初始化股票池服务.
         
@@ -58,7 +68,7 @@ class StockPoolService:
                 latest_trade_date = today
             
             # 计算数据起始日期
-            from datahub.calendar_utils import get_data_start_date
+            from utils.date import get_data_start_date
             observation_days = self.settings.observation_days
             start_date = get_data_start_date(latest_trade_date, observation_days=observation_days)
             
@@ -103,9 +113,13 @@ class StockPoolService:
         )
         logger.info(f"[DATA] 基础过滤后：{len(stock_codes)} 只股票")
         
-        # 2. 行业过滤（LLM 智能匹配）
-        if self.settings.stock_pool.industry:
-            stock_codes = self._apply_industry_filter(df_price, basic_df, stock_codes)
+        # 2. 行业/概念过滤（LLM 智能匹配，OR 关系）
+        if self.settings.stock_pool.ths_concept:
+            stock_codes = self._apply_industry_concept_filter(basic_df, stock_codes, latest_trade_date)
+        
+        # 2.5. 热门股过滤
+        if self.settings.stock_pool.ths_hot and self.settings.stock_pool.ths_hot > 0:
+            stock_codes = self._apply_ths_hot_filter(stock_codes, latest_trade_date)
         
         # 3. 价格/流动性过滤
         pool_filter = StockPoolFilter(self.settings.stock_pool)
@@ -209,12 +223,8 @@ class StockPoolService:
             start_date = str(dates.min()).replace('-', '')[:8]
             end_date = str(dates.max()).replace('-', '')[:8]
             
-            # 根据股票代码推导需要加载的指数代码
-            stock_codes = raw_data.select(pl.col("ts_code").unique()).to_series().to_list()
-            index_codes = self._derive_index_codes(stock_codes)
-            
             logger.info(f"[DATA] 正在加载指数数据 ({start_date} ~ {end_date})...")
-            index_data = self._load_index_data(index_codes, start_date, end_date)
+            index_data = self._load_index_data(self.DEFAULT_INDEX_CODES, start_date, end_date)
             
             if index_data is not None and not index_data.is_empty():
                 logger.info(f"[OK] 成功加载指数数据: {len(index_data)} 条记录")
@@ -229,38 +239,7 @@ class StockPoolService:
             logger.debug(traceback.format_exc())
             return None
     
-    def _derive_index_codes(self, stock_codes: list[str]) -> list[str]:
-        """根据股票代码推导对应的指数代码列表.
-        
-        Args:
-            stock_codes: 股票代码列表
-            
-        Returns:
-            去重后的指数代码列表
-        """
-        from datahub.domain.index_selector import get_index_code
-        
-        if not stock_codes:
-            return []
-        
-        # 使用 Polars map_elements 批量获取指数代码
-        stock_df = pl.DataFrame({"ts_code": stock_codes})
-        stock_with_index = stock_df.with_columns(
-            pl.col("ts_code").map_elements(get_index_code, return_dtype=pl.Utf8).alias("index_code")
-        )
-        
-        # 分组统计
-        index_stock_map = {}
-        for idx_code, group_df in stock_with_index.group_by("index_code"):
-            # Polars group_by 返回的 key 可能是 tuple，需要转换为字符串
-            if isinstance(idx_code, tuple):
-                idx_code = idx_code[0]
-            codes = group_df["ts_code"].to_list()
-            index_stock_map[idx_code] = codes
-        
-        logger.info(f"[DATA] 检测到 {len(index_stock_map)} 个指数板块")
-        
-        return list(index_stock_map.keys())
+
     
     def _load_index_data(self, index_codes: list[str], start_date: str, end_date: str) -> pl.DataFrame | None:
         """加载指数数据.
@@ -307,6 +286,173 @@ class StockPoolService:
             return None
     
 
+    
+    def _apply_industry_concept_filter(
+        self,
+        raw_data: pl.DataFrame, 
+        stock_codes: list[str],
+        trade_date: str
+    ) -> list[str]:
+        """应用行业/概念过滤（OR 关系：匹配概念其中之一即可）.
+        
+        Args:
+            raw_data: 原始数据（包含基础信息）
+            stock_codes: 当前股票代码列表
+            trade_date: 交易日期（YYYYMMDD格式）
+            
+        Returns:
+            过滤后的股票代码列表
+        """
+        target_filters = self.settings.stock_pool.ths_concept
+        logger.info(f"[TARGET] 开始行业/概念过滤，配置列表：{target_filters}")
+        
+        # 1. 加载概念数据（使用 loaders 接口）
+        from datahub.loaders import get_ths_concepts, aggregate_ths_concepts_by_stock
+        
+        # 获取基础数据（只保留需要的股票）
+        basic_df = raw_data.filter(pl.col("ts_code").is_in(stock_codes))
+        if basic_df.is_empty():
+            logger.warning("[WARN] 基础数据为空，跳过行业/概念过滤")
+            return stock_codes
+        
+        # 加载概念数据
+        concept_df = get_ths_concepts(trade_date)
+        
+        if concept_df.is_empty():
+            logger.warning("[WARN] 未获取到概念数据，跳过过滤")
+            return stock_codes
+        
+        # 聚合概念信息（按股票代码分组）
+        concepts_agg = aggregate_ths_concepts_by_stock(concept_df)
+        
+        if concepts_agg.is_empty():
+            logger.warning("[WARN] 概念数据聚合后为空，跳过过滤")
+            return stock_codes
+        
+        # LEFT JOIN 合并到基础数据
+        basic_with_concepts = basic_df.join(concepts_agg, on="ts_code", how="left")
+        
+        if "ths_concepts" in basic_with_concepts.columns:
+            basic_with_concepts = basic_with_concepts.with_columns(
+                pl.col("ths_concepts").fill_null("")
+            )
+        else:
+            basic_with_concepts = basic_with_concepts.with_columns(
+                pl.lit("").alias("ths_concepts")
+            )
+        
+        # 检查是否有概念列
+        if "ths_concepts" not in basic_with_concepts.columns:
+            logger.warning("[WARN] 数据中缺少 ths_concepts 列，跳过过滤")
+            return stock_codes
+        
+        # 2. 收集所有可用的概念和行业（向量化操作）
+        # 使用 Polars 的 explode 和 unique 替代 Python for 循环
+        available_concepts = (
+            basic_with_concepts
+            .select("ths_concepts")
+            .filter(pl.col("ths_concepts") != "")
+            .with_columns(
+                pl.col("ths_concepts").str.split("|").alias("concept_list")
+            )
+            .select(pl.col("concept_list").explode())
+            .unique()
+            .to_series()
+            .to_list()
+        )
+        # 转换为 set 用于快速查找
+        available_concepts_set = {c.strip() for c in available_concepts if c}
+        
+        # 从 raw_data 中提取行业信息（向量化操作）
+        available_industries_set = set()
+        if "industry" in basic_df.columns:
+            available_industries_set = {
+                ind.strip() 
+                for ind in basic_df.select("industry")
+                .unique()
+                .to_series()
+                .drop_nulls()
+                .to_list()
+                if ind
+            }
+        
+        # 合并所有可用标签（概念 + 行业）
+        all_available_tags = sorted(available_concepts_set | available_industries_set)
+        logger.info(f"[DATA] 可用标签总数：{len(all_available_tags)} (概念: {len(available_concepts_set)}, 行业: {len(available_industries_set)})")
+        
+        # 3. 使用 LLM 匹配目标标签
+        llm = build_llm_from_api_config(self.settings.llm.to_dict())
+        matcher = IndustryMatcher(llm)
+        
+        # LLM 匹配
+        matched_tags = matcher.match_industries(target_filters, all_available_tags)
+        
+        if not matched_tags:
+            logger.warning("[WARN] 未匹配到任何标签，跳过过滤")
+            return stock_codes
+        
+        logger.info(f"[OK] LLM 匹配结果：{matched_tags}")
+        
+        # 4. OR 关系过滤：只要匹配到任一标签即可（使用列表推导式）
+        filter_conditions = [
+            pl.col("ths_concepts").str.contains(tag, literal=True)
+            if tag in available_concepts_set else
+            pl.col("industry") == tag
+            for tag in matched_tags
+            if tag in available_concepts_set or tag in available_industries_set
+        ]
+        
+        if not filter_conditions:
+            logger.warning("[WARN] 无法构建过滤条件")
+            return stock_codes
+        
+        # 组合所有条件（OR 关系）
+        combined_condition = filter_conditions[0]
+        for cond in filter_conditions[1:]:
+            combined_condition = combined_condition | cond
+        
+        # 执行过滤
+        filtered_df = basic_with_concepts.filter(combined_condition)
+        filtered_stock_codes = filtered_df.select("ts_code").unique().to_series().to_list()
+        
+        logger.info(f"[OK] 概念/行业过滤完成：{len(filtered_stock_codes)} 只股票匹配 {len(matched_tags)} 个标签")
+        
+        return filtered_stock_codes
+    
+    def _apply_ths_hot_filter(
+        self,
+        stock_codes: list[str],
+        trade_date: str
+    ) -> list[str]:
+        """应用同花顺热门股过滤.
+        
+        Args:
+            stock_codes: 当前股票代码列表
+            trade_date: 交易日期（YYYYMMDD格式）
+            
+        Returns:
+            过滤后的股票代码列表（只保留热门股）
+        """
+        top_n = self.settings.stock_pool.ths_hot
+        logger.info(f"[TARGET] 开始热门股过滤，获取前 {top_n} 只热门股")
+        
+        # 加载热门股列表（使用 loaders 接口）
+        from datahub.loaders import get_ths_hot_stocks
+        
+        hot_stocks = get_ths_hot_stocks(trade_date, top_n)
+        
+        if not hot_stocks:
+            logger.warning("[WARN] 未获取到热门股数据，跳过过滤")
+            return stock_codes
+        
+        # 取交集：只保留既是当前股票池又是热门股的股票
+        stock_set = set(stock_codes)
+        hot_set = set(hot_stocks)
+        filtered_codes = list(stock_set & hot_set)
+        
+        logger.info(f"[OK] 热门股过滤完成：{len(filtered_codes)} 只股票（从 {len(stock_codes)} 只中筛选）")
+        
+        return filtered_codes
     
     def _apply_industry_filter(
         self, 

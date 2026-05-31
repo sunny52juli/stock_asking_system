@@ -1,4 +1,4 @@
-"""Tests for datahub integration and entries."""
+﻿"""Tests for datahub integration and entries."""
 
 import pytest
 import pandas as pd
@@ -199,15 +199,15 @@ class TestErrorHandling:
         meta = DatasetMeta(
             dataset=Dataset.STOCK_DAILY,
             domain='stock',
-            partition_by='date',
+            partition_by='datetime',
             key_columns=['ts_code'],
             storage_path='stock/daily',
             date_column='trade_date',
             code_column='ts_code',
-            partition_key_template='{date}',
+            partition_key_template='{datetime}',
             description='Test'
         )
-        pipeline = [FetchStep(api_name='daily', param_mapping={'trade_date': 'date'})]
+        pipeline = [FetchStep(api_name='daily', param_mapping={'trade_date': 'datetime'})]
         mock_registry.get.return_value = (meta, pipeline)
         
         repo = SyncRepository(mock_store, mock_source, auto_save=False)

@@ -1,4 +1,4 @@
-"""News dataset registrations."""
+﻿"""News dataset registrations."""
 
 from datahub.core.dataset import Dataset, DatasetMeta, DatasetRegistry, FetchStep
 
@@ -6,12 +6,12 @@ DatasetRegistry.register(
     DatasetMeta(
         dataset=Dataset.STOCK_ANNOUNCEMENT,
         domain="news",
-        partition_by="date",
+        partition_by="datetime",
         key_columns=["ts_code", "ann_date"],
         storage_path="news/announcement",
         date_column="ann_date",
         code_column="ts_code",
-        partition_key_template="{date}",
+        partition_key_template="{datetime}",
         description="上市公司公告（定期/临时）",
     ),
     pipeline=[
@@ -28,12 +28,12 @@ DatasetRegistry.register(
     DatasetMeta(
         dataset=Dataset.ANALYST_REPORT,
         domain="news",
-        partition_by="date",
+        partition_by="datetime",
         key_columns=["ts_code", "report_date"],
         storage_path="news/analyst_report",
         date_column="report_date",
         code_column="ts_code",
-        partition_key_template="{date}",
+        partition_key_template="{datetime}",
         description="分析师研报评级（买入/增持/中性/减持/卖出）",
     ),
     pipeline=[
@@ -63,12 +63,12 @@ DatasetRegistry.register(
     DatasetMeta(
         dataset=Dataset.EARNINGS_FORECAST,
         domain="news",
-        partition_by="date",
+        partition_by="datetime",
         key_columns=["ts_code", "ann_date", "end_date"],
         storage_path="news/earnings_forecast",
         date_column="ann_date",
         code_column="ts_code",
-        partition_key_template="{date}",
+        partition_key_template="{datetime}",
         description="上市公司盈利预告",
     ),
     pipeline=[

@@ -1,4 +1,4 @@
-"""查询编排器 - 协调Agent初始化和查询执行."""
+﻿"""查询编排器 - 协调Agent初始化和查询执行."""
 
 from __future__ import annotations
 

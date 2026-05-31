@@ -33,7 +33,7 @@ class DataFields:
 
     # 基础信息字段
     _INFO_MAP: ClassVar[dict[str, str]] = {
-        "date": "date",
+        "datetime": "datetime",
         "code": "code",
         "ts_code": "ts_code",
         "name": "name",
@@ -110,7 +110,7 @@ class DataFields:
     }
 
     # 必需字段（数据验证时检查）
-    REQUIRED_FIELDS: ClassVar[list[str]] = ["date", "code", "open", "high", "low", "close", "vol"]
+    REQUIRED_FIELDS: ClassVar[list[str]] = ["datetime", "code", "open", "high", "low", "close", "vol"]
     
     # 数值字段（需要数值类型）
     NUMERIC_FIELDS: ClassVar[list[str]] = [
@@ -219,7 +219,7 @@ class DataFields:
             "vol": "成交量（手）",
             "amount": "成交金额（元）",
             # 基础信息字段
-            "date": "交易日期",
+            "datetime": "交易日期",
             "code": "股票代码",
             "ts_code": "股票代码（Tushare 格式）",
             "name": "股票名称",

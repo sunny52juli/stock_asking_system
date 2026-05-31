@@ -34,19 +34,26 @@ class TushareSource(DataSource):
         for attempt in range(self.max_retry):
             try:
                 api_fn = getattr(self.pro, api_name)
+                # 只在debug级别记录API调用详情，避免刷屏
+                logger.debug(f"调用 Tushare API: {api_name}, 参数: {params}")
                 result = api_fn(**params)
                 if result is not None and not result.empty:
                     # Convert pandas DataFrame to polars immediately
+                    logger.debug(f"API {api_name} 成功，返回 {len(result)} 条记录")
                     return pl.from_pandas(result)
+                # 空结果只在debug级别记录
+                logger.debug(f"API {api_name} 返回空结果")
                 return None
             except Exception as e:
+                error_msg = str(e)
+                logger.error(f"API {api_name} 第 {attempt + 1} 次尝试失败: {error_msg}")
                 if attempt < self.max_retry - 1:
                     wait = (attempt + 1) * self.retry_delay
                     logger.warning(
                         "API %s attempt %d failed: %s, retry in %.1fs",
                         api_name,
                         attempt + 1,
-                        e,
+                        error_msg,
                         wait,
                     )
                     time.sleep(wait)
@@ -55,8 +62,11 @@ class TushareSource(DataSource):
                         "API %s failed after %d attempts: %s",
                         api_name,
                         self.max_retry,
-                        e,
+                        error_msg,
                     )
+                    # 特别提示积分不足的情况
+                    if "积分" in error_msg or "permission" in error_msg.lower() or "权限" in error_msg:
+                        logger.error("💡 提示：可能是Tushare积分不足，请检查您的积分等级和API权限要求")
                     return None
         return None
     

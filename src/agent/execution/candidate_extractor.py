@@ -1,4 +1,4 @@
-﻿"""候选股票提取器 - 从 Agent 结果中提取 candidates."""
+"""候选股票提取器 - 从 Agent 结果中提取 candidates."""
 
 from __future__ import annotations
 
@@ -57,12 +57,18 @@ class CandidateExtractor:
         """
         try:
             last_result = bridge.get_last_screening_result()
+            logger.debug(f"[DEBUG] Bridge get_last_screening_result 返回: {type(last_result)}")
+            if last_result:
+                logger.debug(f"[DEBUG] Bridge result keys: {last_result.keys()}")
+                logger.debug(f"[DEBUG] Bridge result count: {last_result.get('count')}")
             if last_result and "candidates" in last_result:
                 candidates = last_result["candidates"]
                 logger.info(f"[OK] 从 Bridge 工具获取到 {len(candidates)} 只候选股票")
                 return candidates
+            else:
+                logger.warning(f"[WARN] Bridge 返回结果为空或缺少 candidates 字段: {last_result is None}")
         except Exception as e:
-            logger.debug(f"从 Bridge 获取 candidates 失败: {e}")
+            logger.debug(f"从 Bridge 获取 candidates 失败: {e}", exc_info=True)
         
         return None
     

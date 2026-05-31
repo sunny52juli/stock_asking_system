@@ -7,10 +7,9 @@ from __future__ import annotations
 import polars as pl
 from datetime import datetime, timedelta
 
-from datahub.entries import Calendar, Stock
 from datahub.loaders.base import BaseDataLoader
-from datahub.calendar_utils import get_data_start_date
 from infrastructure.logging.logger import  get_logger
+from utils.date import get_data_start_date
 logger = get_logger(__name__)
 
 
@@ -75,16 +74,20 @@ class StockDataLoader(BaseDataLoader):
         exclude_st: bool = True,
         min_list_days: int = 180,
         index_code: str | None = None,
-        stock: Stock | None = None,
-        calendar: Calendar | None = None,
+        stock: "Stock | None" = None,
+        calendar: "Calendar | None" = None,
+        include_concepts: bool = False,  # 新增：是否包含概念信息
     ) -> None:
         super().__init__()
         self.exclude_st = exclude_st
         self.min_list_days = min_list_days
         self.index_code = index_code
+        # 延迟导入，避免循环依赖
+        from datahub.entries import Stock, Calendar
         self._stock = stock or Stock()
         self._calendar = calendar or Calendar()
         self._available_industries: list[str] | None = None
+        self._include_concepts = include_concepts  # 保存配置
 
     def load_data(self, **kwargs: object) -> "pl.DataFrame":
         return self.load_market_data(**kwargs)
@@ -94,11 +97,11 @@ class StockDataLoader(BaseDataLoader):
         
         Args:
             force_reload: Force reload from data source
-            trade_date_for_pool: Trade date for stock pool filtering. 
-                                If None, uses the latest available trade date from cache/calendar.
-                                Recommended to set explicitly to avoid future date issues.
-            start_date: Start date for price data (YYYYMMDD). If None, auto-calculated from backtest_config or trade_date_for_pool
-            end_date: End date for price data (YYYYMMDD). If None, uses trade_date_for_pool
+            trade_date_for_pool: Trade datetime for stock pool filtering.
+                                If None, uses the latest available trade datetime from cache/calendar.
+                                Recommended to set explicitly to avoid future datetime issues.
+            start_date: Start datetime for price data (YYYYMMDD). If None, auto-calculated from backtest_config or trade_date_for_pool
+            end_date: End datetime for price data (YYYYMMDD). If None, uses trade_date_for_pool
             observation_days: Number of trading days for lookback period. If None, uses config default
         """
         if self._data is not None and not force_reload:
@@ -128,6 +131,13 @@ class StockDataLoader(BaseDataLoader):
         if not self._stock_pool:
             raise ValueError("无法获取股票池数据，请检查本地数据是否存在")
         print(f"[DATA] 股票池共 {len(self._stock_pool)} 只股票")
+        
+        # 如果需要概念信息，加载增强版 universe
+        if self._include_concepts:
+            print("[DATA] 正在加载概念信息...")
+            basic_with_concepts = self._stock.universe_with_concepts()
+            if not basic_with_concepts.is_empty() and "concepts" in basic_with_concepts.columns:
+                print(f"[OK] 概念信息加载完成")
         
         # 加载价格数据
         print(f"[DATA] 加载数据：{start_date} ~ {end_date}")
@@ -213,11 +223,13 @@ def create_stock_data_loader(
     exclude_st: bool = True,
     min_list_days: int = 180,
     index_code: str | None = None,
+    include_concepts: bool = False,  # 新增参数
 ) -> StockDataLoader:
     return StockDataLoader(
         exclude_st=exclude_st,
         min_list_days=min_list_days,
         index_code=index_code,
+        include_concepts=include_concepts,
     )
 
 
@@ -241,6 +253,43 @@ def get_available_industries(data: "pl.DataFrame | None" = None) -> list[str]:
     loader = StockDataLoader()
     loader.load_market_data()
     return loader.get_available_industries()
+
+
+def get_available_concepts(data: "pl.DataFrame | None" = None) -> list[str]:
+    """获取可用的概念列表
+    
+    Args:
+        data: 可选的 DataFrame，如果提供则从中提取概念；否则从数据源加载
+        
+    Returns:
+        概念列表（已排序）
+    """
+    if data is not None:
+        # 从提供的 DataFrame 中提取
+        if "concepts" not in data.columns:
+            return []
+        # 解析 concepts 字段（用 | 分隔）
+        all_concepts = set()
+        for concepts_str in data.select(pl.col("concepts")).to_series():
+            if concepts_str and isinstance(concepts_str, str):
+                for concept in concepts_str.split("|"):
+                    concept = concept.strip()
+                    if concept:
+                        all_concepts.add(concept)
+        return sorted(all_concepts)
+    
+    # 从数据源加载
+    from datahub.loaders.ths_concept_loader import get_ths_concepts, aggregate_ths_concepts_by_stock
+    from datetime import datetime
+    
+    trade_date = datetime.now().strftime("%Y%m%d")
+    concept_df = get_ths_concepts(trade_date)
+    
+    if concept_df.is_empty():
+        return []
+    
+    aggregated = aggregate_ths_concepts_by_stock(concept_df)
+    return get_available_concepts(aggregated)
 
 
 def load_latest_market_data(recent_days: int = 60) -> "pl.DataFrame":
@@ -272,6 +321,7 @@ def load_raw_market_data(
     end_date: str,
     exclude_st: bool = False,
     min_list_days: int = 0,
+    include_concepts: bool = False,  # 新增参数
 ) -> "pl.DataFrame":
     """加载原始市场数据（不进行股票池过滤）。
     
@@ -282,13 +332,15 @@ def load_raw_market_data(
         end_date: 结束日期（YYYYMMDD）
         exclude_st: 是否排除 ST 股票，默认 False（加载全量数据）
         min_list_days: 最小上市天数，默认 0（不限制）
+        include_concepts: 是否包含概念信息，默认 False
         
     Returns:
-        Polars DataFrame (sorted by trade_date, ts_code)，包含行业信息
+        Polars DataFrame (sorted by trade_date, ts_code)，包含行业信息（和概念信息如果 enable）
     """
     loader = StockDataLoader(
         exclude_st=exclude_st,
         min_list_days=min_list_days,
+        include_concepts=include_concepts,
     )
     return loader.load_market_data(
         trade_date_for_pool=end_date,

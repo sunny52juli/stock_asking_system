@@ -137,7 +137,17 @@ class StockScreener:
                         
                         if all_index_data:
                             # 合并所有指数数据
-                            self.index_data = pl.concat(all_index_data).sort('trade_date')
+                            self.index_data = pl.concat(all_index_data)
+                            
+                            # 去重：确保 (index_code, trade_date) 唯一
+                            if 'index_code' in self.index_data.columns and 'trade_date' in self.index_data.columns:
+                                before_count = len(self.index_data)
+                                self.index_data = self.index_data.unique(subset=['index_code', 'trade_date'], keep='first')
+                                after_count = len(self.index_data)
+                                if before_count != after_count:
+                                    logger.info(f"   [OK] 去除 {before_count - after_count} 条重复记录")
+                            
+                            self.index_data = self.index_data.sort('trade_date')
                             logger.info(f"✅ 成功加载指数数据: {len(self.index_data)} 条记录")
                         else:
                             logger.warning("⚠️ 无法加载任何指数数据")

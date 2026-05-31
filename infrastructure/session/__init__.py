@@ -1,4 +1,4 @@
-"""Session 模块 - 会话管理系统（重构版）."""
+﻿"""Session 模块 - 会话管理系统（重构版）."""
 
 from infrastructure.session.models import SessionMessage, QueryRecord
 from infrastructure.session.storage import SessionStorage

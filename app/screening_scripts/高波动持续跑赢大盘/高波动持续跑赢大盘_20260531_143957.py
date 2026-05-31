@@ -1,28 +1,29 @@
 ﻿#!/usr/bin/env python3
 """
-筛选逻辑脚本: 高波动持续跑赢大盘（严格版）
+筛选逻辑脚本: 高波动持续跑赢大盘
 (由 core.agent 生成, 仅依赖 core)
 
-原始查询: 高波动持续跑赢大盘（严格版）
+原始查询: 找出高波动且持续跑赢大盘的股票
 
 筛选说明:
-    Beta>1表示波动高于大盘，Alpha>0表示超额收益为正，outperform_rate>0.55表示近60个交易日中超过55%的天数跑赢大盘，综合筛选高波动且持续强势的股票
+    筛选高波动（ATR14/MA60>2%）且持续跑赢大盘（Alpha>0，跑赢天数>50%）的强势股票
 
 工具步骤:
     1. atr14: 通过工具 'atr' 计算，参数={'high': 'high', 'low': 'low', 'close': 'close', 'window': 14}
-    2. beta_60: 通过工具 'beta' 计算，参数={'stock_col': 'close', 'index_col': 'index_close', 'window': 60}
-    3. alpha_60: 通过工具 'alpha' 计算，参数={'stock_col': 'close', 'index_col': 'index_close', 'window': 60}
-    4. outperform_rate_60: 通过工具 'outperform_rate' 计算，参数={'stock_col': 'close', 'index_col': 'index_close', 'window': 60}
+    2. ma60: 通过工具 'rolling_mean' 计算，参数={'values': 'close', 'window': 60}
+    3. alpha_60d: 通过工具 'alpha' 计算，参数={'stock_col': 'close', 'index_col': 'index_close', 'window': 60}
+    4. outperform_rate_60d: 通过工具 'outperform_rate' 计算，参数={'stock_col': 'close', 'index_col': 'index_close', 'window': 60}
 
-筛选表达式: (beta_60 > 1.0) & (alpha_60 > 0.01) & (outperform_rate_60 > 0.55)
+筛选表达式: (atr14 / ma60 > 0.02) & (alpha_60d > 0) & (outperform_rate_60d > 0.5)
 
-生成时间: 2026-05-10 14:47:56
+生成时间: 2026-05-31 14:39:57
 """
 
 import sys
 import os
 import json
 import argparse
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Any
@@ -31,12 +32,21 @@ from dotenv import load_dotenv
 # 加载环境变量
 load_dotenv()
 
-# 项目根加入路径 (脚本可能在 output/ 下)
-script_dir = os.path.dirname(os.path.abspath(__file__))
-app_dir = os.path.dirname(script_dir)  # app/
-project_root = os.path.dirname(app_dir)  # 项目根目录
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# 项目根加入路径 (脚本可能在 app/screening_scripts/策略名/ 下)
+script_dir = Path(__file__).resolve().parent
+# 向上查找直到找到包含 utils/src/infrastructure 的项目根目录
+current = script_dir
+for _ in range(5):  # 最多向上查找 5 层
+    if (current / "utils").exists() and (current / "src").exists():
+        project_root = current
+        break
+    current = current.parent
+else:
+    # 如果没找到，默认使用 script_dir 的父级的父级
+    project_root = script_dir.parent.parent
+
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 # 导入 StockScreener
 from utils.screening.stock_screener import StockScreener
@@ -46,7 +56,7 @@ from src.agent.services.stock_pool_service import StockPoolService
 
 # ==================== 筛选逻辑定义 ====================
 SCREENING_LOGIC = {
-    "name": "高波动持续跑赢大盘（严格版）",
+    "name": "高波动持续跑赢大盘",
     "tools": [
         {
             "tool": "atr",
@@ -59,13 +69,12 @@ SCREENING_LOGIC = {
             "var": "atr14"
         },
         {
-            "tool": "beta",
+            "tool": "rolling_mean",
             "params": {
-                "stock_col": "close",
-                "index_col": "index_close",
+                "values": "close",
                 "window": 60
             },
-            "var": "beta_60"
+            "var": "ma60"
         },
         {
             "tool": "alpha",
@@ -74,7 +83,7 @@ SCREENING_LOGIC = {
                 "index_col": "index_close",
                 "window": 60
             },
-            "var": "alpha_60"
+            "var": "alpha_60d"
         },
         {
             "tool": "outperform_rate",
@@ -83,16 +92,20 @@ SCREENING_LOGIC = {
                 "index_col": "index_close",
                 "window": 60
             },
-            "var": "outperform_rate_60"
+            "var": "outperform_rate_60d"
         }
     ],
-    "expression": "(beta_60 > 1.0) & (alpha_60 > 0.01) & (outperform_rate_60 > 0.55)",
-    "confidence_formula": "alpha_60 * 0.5 + outperform_rate_60 * 0.3 + (beta_60 - 1.0) * 0.2",
-    "rationale": "Beta>1表示波动高于大盘，Alpha>0表示超额收益为正，outperform_rate>0.55表示近60个交易日中超过55%的天数跑赢大盘，综合筛选高波动且持续强势的股票"
+    "expression": "(atr14 / ma60 > 0.02) & (alpha_60d > 0) & (outperform_rate_60d > 0.5)",
+    "confidence_weights": {
+        "alpha_60d": 0.5,
+        "outperform_rate_60d": 0.3,
+        "atr14": 0.2
+    },
+    "rationale": "筛选高波动（ATR14/MA60>2%）且持续跑赢大盘（Alpha>0，跑赢天数>50%）的强势股票"
 }
 # ==================== 筛选逻辑定义结束 ====================
 
-ORIGINAL_QUERY = """高波动持续跑赢大盘（严格版）"""
+ORIGINAL_QUERY = """找出高波动且持续跑赢大盘的股票"""
 
 
 def get_screening_logic() -> dict:
@@ -121,7 +134,7 @@ def main():
 
     logic_name = SCREENING_LOGIC.get("name", "未命名筛选")
     
-    parser = argparse.ArgumentParser(description=f'高波动持续跑赢大盘（严格版） - 筛选脚本')
+    parser = argparse.ArgumentParser(description=f'高波动持续跑赢大盘 - 筛选脚本')
     parser.add_argument('--top_n', type=int, default=10, help='返回股票数量（默认 10）')
     parser.add_argument('--output', type=str, default=None, help='输出文件路径（可选）')
     args = parser.parse_args()

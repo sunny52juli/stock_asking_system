@@ -20,10 +20,24 @@ author: Quant Team
     {"tool": "工具名", "params": {"参数": "值"}, "var": "变量名"}
   ],
   "expression": "(var1 > 值) & (var2 < 值)",
-  "confidence_formula": "var1 * 0.5 + var2 * 0.5",
+  "confidence_weights": {
+    "var1": 0.5,
+    "var2": 0.5
+  },
   "rationale": "筛选理由"
 }
 ```
+
+**⚠️ 重要原则**：
+- ✅ **必须使用** `confidence_weights` 字典配置权重
+- 📌 **权重数量 = 打分指标数量 ≠ expression 中的变量数量**
+- 💡 **区分筛选变量与打分指标**：
+  - `expression` 中的变量用于过滤（可能包含中间计算）
+  - `confidence_weights` 中的变量用于最终排序
+  - 示例：`expression: "(atr14 / ma60 > 0.03) & (alpha > 0)"` 
+    - expression 中有 3 个变量：`atr14`, `ma60`, `alpha`
+    - 但如果只给 `alpha` 打分，只需 1 个权重：`{"alpha": 1.0}`
+    - `atr14/ma60` 是筛选条件的中间计算，不参与打分
 
 ## 可用字段（严格约束）
 **价格**: `close`, `open`, `high`, `low`, `pre_close`, `change`, `pct_chg`  
@@ -115,7 +129,9 @@ author: Quant Team
     {"tool": "rolling_std", "params": {"column": "close", "window": 20}, "var": "volatility_20"}
   ],
   "expression": "volatility_20 > 0",  // 筛选出有数据的股票
-  "confidence_formula": "1.0 / (volatility_20 + 0.01)"  // 波动率越低，置信度越高
+  "confidence_weights": {
+    "volatility_20": 1.0  // 波动率越低越好（系统会自动反向归一化）
+  }
 }
 ```
 
@@ -128,7 +144,9 @@ author: Quant Team
     {"tool": "zscore_normalize", "params": {"values": "volatility_20"}, "var": "vol_zscore"}
   ],
   "expression": "(vol_zscore < -1.0)",  // Z-score < -1，表示低于均值1个标准差
-  "confidence_formula": "-vol_zscore"  // Z-score越小，置信度越高
+  "confidence_weights": {
+    "vol_zscore": 1.0  // Z-score越小，置信度越高（自动反向处理）
+  }
 }
 ```
 
@@ -140,24 +158,91 @@ author: Quant Team
     {"tool": "beta", "params": {"window": 60}, "var": "beta_60"}
   ],
   "expression": "(beta_60 < 1.0)",  // Beta < 1，系统性风险低于市场
-  "confidence_formula": "1.0 / (beta_60 + 0.1)"
+  "confidence_weights": {
+    "beta_60": 1.0  // Beta越低越好（自动反向处理）
+  }
 }
 ```
 
 ### 6. 低波动高阿尔法策略
 **关键词**: 低波动、跑赢大盘、Beta、Alpha  
 **示例**: `(beta < 1.0) & (alpha > 0)`  
-**工具**: `beta(window=60)`, `alpha(window=60)`
+**工具**: `beta(window=60)`, `alpha(window=60)`  
+**置信度配置**:
+```json
+{
+  "confidence_weights": {
+    "beta_60": 0.4,   // 低波动重要性
+    "alpha_60": 0.6   // 超额收益更重要
+  }
+}
+```
 
 ### 7. 信息比率选股
 **关键词**: 信息比率、风险调整后收益  
 **示例**: `(information_ratio > 0.5) & (tracking_error < 0.1)`  
-**工具**: `information_ratio(window=60)`, `tracking_error(window=60)`
+**工具**: `information_ratio(window=60)`, `tracking_error(window=60)`  
+**置信度配置**:
+```json
+{
+  "confidence_weights": {
+    "information_ratio_60": 0.7,  // IR是主要指标
+    "tracking_error_60": 0.3      // TE辅助约束
+  }
+}
+```
 
 ### 8. 跑赢大盘天数
 **关键词**: 跑赢大盘、超额收益天数  
 **示例**: `(outperform_rate > 40)`  （60天内跑赢40天以上）  
-**工具**: `outperform_rate(window=60)`
+**工具**: `outperform_rate(window=60)`  
+**置信度配置**:
+```json
+{
+  "confidence_weights": {
+    "outperform_rate_60": 1.0  // 跑赢天数越多越好
+  }
+}
+```
+
+### 9. ⚠️ 重要：区分筛选变量与打分指标
+
+**场景**：找出高波动（ATR/MA比值大）且跑赢大盘的股票
+
+```json
+{
+  "name": "high_volatility_outperform",
+  "tools": [
+    {"tool": "atr", "params": {"window": 14}, "var": "atr14"},
+    {"tool": "rolling_mean", "params": {"column": "close", "window": 60}, "var": "ma60"},
+    {"tool": "alpha", "params": {"window": 60}, "var": "alpha_60d"},
+    {"tool": "outperform_rate", "params": {"window": 60}, "var": "outperform_rate_60d"}
+  ],
+  
+  // expression 中有 4 个变量：atr14, ma60, alpha_60d, outperform_rate_60d
+  "expression": "(atr14 / ma60 > 0.03) & (alpha_60d > 0) & (outperform_rate_60d >= 0.5)",
+  
+  // ❌ 错误：给所有 expression 变量都定义权重（包括中间变量）
+  // "confidence_weights": {
+  //   "atr14": 0.25,
+  //   "ma60": 0.25,
+  //   "alpha_60d": 0.25,
+  //   "outperform_rate_60d": 0.25
+  // }
+  
+  // ✅ 正确：只给真正用于打分的指标定义权重
+  // 这里我们只想根据 Alpha 和 Outperform Rate 排序
+  "confidence_weights": {
+    "alpha_60d": 0.6,              // 超额收益更重要
+    "outperform_rate_60d": 0.4     // 跑赢天数辅助
+  }
+  
+  // 💡 说明：
+  // - atr14 和 ma60 只在 expression 中用于筛选条件 (atr14/ma60 > 0.03)
+  // - 它们是中间计算过程，不参与最终 confidence 打分
+  // - 只有 alpha_60d 和 outperform_rate_60d 用于排序候选股票
+}
+```
 
 ## 关键规则
 
@@ -167,6 +252,7 @@ author: Quant Team
 3. **变量一致性**：`expression` 中的变量名必须与 `tools` 定义的 `var` 完全一致。
 4. **百分比表示**：统一使用小数 (例如 3% 写作 0.03)。
 5. **量纲规范**：禁止对绝对标准差进行无意义的除法操作，请使用 `zscore_normalize` 或专业指标（如 Beta）。
+6. **置信度配置**：**必须使用 `confidence_weights` 字典格式**，系统会自动进行 Min-Max 归一化和加权打分。
 
 ## 常见错误
 - ❌ 使用不存在的字段 (`volume` → 应为 `vol`)
@@ -178,6 +264,7 @@ author: Quant Team
   - **正确做法**: 使用 `zscore_normalize`、`rank_normalize` 或专业指标如 `beta`
 - ❌ 在 screening_logic 中重复行业/ST/市值过滤（已由 StockPoolService 处理）
 - ❌ **工具返回值范围错误**: 详见 `.stock_asking/rules/tool-value-ranges.md`
+- ❌ **缺少 confidence_weights**：必须提供置信度权重配置，否则不会执行加权打分
 
 ## 相关资源
 

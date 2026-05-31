@@ -1,4 +1,4 @@
-"""Domain entry points: DataHub (single config) and Stock, Fund, Index, News, Feature, Calendar."""
+"""Domain entry points: DataHub (single config) and Stock, Fund, Index, News, Feature, Calendar, ThsConcept."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from datahub.domain.fund import Fund as _Fund
 from datahub.domain.index import Index as _Index
 from datahub.domain.news import News as _News
 from datahub.domain.stock import Stock as _Stock
+from datahub.domain.ths_concept import ThsConcept as _ThsConcept
 from datahub.factory import Factory
 from datahub.protocols import (
     CalendarProtocol,
@@ -106,6 +107,10 @@ class DataHub:
             stock_instance = _Stock(self._get_repo())
         return _Feature(stock_instance)
 
+    def ThsConcept(self):
+        """Return ths concept dataset (uses this DataHub config)."""
+        return _ThsConcept(self._get_repo())
+
 
 def Stock(
     root: str | Path | None = None,
@@ -167,3 +172,13 @@ def Feature(
         repo = _create_repo(root=root, mode=mode, token=token)
         stock_instance = _Stock(repo)
     return _Feature(stock_instance)
+
+
+def ThsConcept(
+    root: str | Path | None = None,
+    mode: str = "auto",
+    token: str | None = None,
+    repo: object | None = None,
+):
+    """Return ths concept dataset. Config from env when root/token/repo not passed."""
+    return _create_domain_instance(_ThsConcept, root=root, mode=mode, token=token, repo=repo)

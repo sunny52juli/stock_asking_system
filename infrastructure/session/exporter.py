@@ -1,4 +1,4 @@
-"""会话导出器 - 将会话导出为HTML报告."""
+﻿"""会话导出器 - 将会话导出为HTML报告."""
 
 from __future__ import annotations
 

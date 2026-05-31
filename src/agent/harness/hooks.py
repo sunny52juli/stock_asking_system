@@ -1,4 +1,4 @@
-"""Hooks 执行器 - PreToolUse/PostToolUse/Stop 钩子系统.
+﻿"""Hooks 执行器 - PreToolUse/PostToolUse/Stop 钩子系统.
 
 import os
 import re

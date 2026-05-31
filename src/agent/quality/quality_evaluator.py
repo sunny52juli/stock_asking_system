@@ -1,4 +1,4 @@
-"""质量评估协议与选股评估器实现.
+﻿"""质量评估协议与选股评估器实现.
 
 定义通用的 QualityEvaluator 协议，并提供选股领域的 ScreeningQualityEvaluator 实现。
 支持 Protocol 设计，便于领域扩展。

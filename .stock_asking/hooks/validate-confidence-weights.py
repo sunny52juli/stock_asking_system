@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """PostToolUse Hook - 验证 confidence_weights 的完整性.
 
 检查 Agent 生成的 screening_logic 中：

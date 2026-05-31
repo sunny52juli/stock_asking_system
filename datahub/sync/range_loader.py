@@ -1,4 +1,4 @@
-"""范围加载器 - 负责批量加载日期范围数据."""
+﻿"""范围加载器 - 负责批量加载日期范围数据."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from utils.datetime_utils import DateAdjuster, generate_date_range
+from utils.date import DateAdjuster, generate_date_range
 from datahub.core.query import Query
 
 if TYPE_CHECKING:

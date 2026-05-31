@@ -1,4 +1,4 @@
-"""股票池筛选器 - 根据配置过滤股票池."""
+﻿"""股票池筛选器 - 根据配置过滤股票池."""
 
 from __future__ import annotations
 import polars as pl

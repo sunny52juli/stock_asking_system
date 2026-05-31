@@ -80,7 +80,7 @@ class ResultDisplayer:
         logger.info("\n📈 筛选结果详情 (Top 10):")
         
         # 动态生成表头：根据 metrics 中的键值自动扩展列
-        base_headers = ["排名", "代码", "名称", "行业", "综合评分"]
+        base_headers = ["排名", "代码", "名称", "行业", "所属概念", "综合评分"]
         
         # ✅ 优先展示筛选表达式中使用的核心指标，而不是简单取前3个
         expression = logic.get("expression", "")
@@ -129,9 +129,12 @@ class ResultDisplayer:
             ts_code = stock.get("ts_code", "N/A")
             name = f"**{stock.get('name', 'N/A')}**"  # 加粗名称
             industry = stock.get("industry", "N/A")
+            concepts = stock.get("ths_concepts", "")
+            # 如果概念为空，显示“-”
+            concepts_display = concepts if concepts else "-"
             score = f"**{stock.get('confidence', 0):.2f}**"  # 加粗得分
             
-            row_data = [str(i), ts_code, name, industry, score]
+            row_data = [str(i), ts_code, name, industry, concepts_display, score]
             
             # 填充指标数据
             metrics = stock.get("metrics", {})

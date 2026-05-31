@@ -1,4 +1,4 @@
-"""CLI for datahub: product + action subcommands, JSON screening_scripts."""
+﻿"""CLI for datahub: product + action subcommands, JSON screening_scripts."""
 
 from __future__ import annotations
 

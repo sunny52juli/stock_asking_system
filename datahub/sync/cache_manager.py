@@ -1,4 +1,4 @@
-﻿"""缓存管理器 - 负责数据的缓存加载、保存和质量检查."""
+"""缓存管理器 - 负责数据的缓存加载、保存和质量检查."""
 
 from __future__ import annotations
 
@@ -49,16 +49,20 @@ class CacheManager:
         # 尝试从缓存加载
         try:
             result = self.store.load(query)
-            logger.debug("[OK] Cache HIT: %s/%s", query.dataset.value, query.date)
+            index_info = f" (index={query.index_code})" if query.index_code else ""
+            logger.debug("[OK] Cache HIT: %s/%s%s", query.dataset.value, query.date, index_info)
             return result
         except DataNotFoundError as e:
-            logger.debug("Cache MISS: %s/%s", query.dataset.value, query.date)
+            index_info = f" (index={query.index_code})" if query.index_code else ""
+            logger.debug("Cache MISS: %s/%s%s", query.dataset.value, query.date, index_info)
         
         # Cache MISS - 从数据源获取
+        index_info = f" (index={query.index_code})" if query.index_code else ""
         logger.info(
-            "[ERROR] Cache MISS: %s/%s, fetching from source",
+            "[ERROR] Cache MISS: %s/%s%s, fetching from source",
             query.dataset.value,
             query.date,
+            index_info,
         )
         
         data = fetch_fn()
@@ -137,13 +141,16 @@ class CacheManager:
             data: 数据 DataFrame
         """
         partition_key = self._resolve_partition_key(query, meta)
-        logger.info("💾 Auto-saving cache: %s/%s", query.dataset.value, query.date)
+        index_info = f" (index={query.index_code})" if query.index_code else ""
+        logger.info("💾 Auto-saving cache: %s/%s%s", query.dataset.value, query.date, index_info)
         
         success = self._safe_save(query.dataset, data, partition_key)
         if success:
-            logger.info("[OK] Cache saved: %s/%s", query.dataset.value, query.date)
+            index_info = f" (index={query.index_code})" if query.index_code else ""
+            logger.info("[OK] Cache saved: %s/%s%s", query.dataset.value, query.date, index_info)
         else:
-            logger.warning("[WARN] Cache save failed: %s/%s", query.dataset.value, query.date)
+            index_info = f" (index={query.index_code})" if query.index_code else ""
+            logger.warning("[WARN] Cache save failed: %s/%s%s", query.dataset.value, query.date, index_info)
     
     def _resolve_partition_key(self, query: Query, meta: DatasetMeta) -> str:
         """解析分区键.
@@ -155,16 +162,16 @@ class CacheManager:
         Returns:
             分区键字符串
         """
-        if meta.partition_by == "date":
-            return query.date or ""
-        elif meta.partition_by == "none":
-            return "default"
-        else:
-            # 自定义分区
-            return meta.partition_key_template.format(
-                date=query.date or "",
-                index_code=query.index_code or "",
-            )
+        # 统一使用 partition_key_template 生成分区键
+        index_code_safe = ""
+        if query.index_code:
+            index_code_safe = query.index_code.replace(".", "_")
+        
+        return meta.partition_key_template.format(
+            datetime=query.date or "",
+            date=query.date or "",
+            index_code=index_code_safe,
+        )
     
     def _safe_save(self, dataset: Dataset, data: pl.DataFrame, partition_key: str) -> bool:
         """安全保存（捕获异常）.

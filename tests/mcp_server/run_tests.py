@@ -1,4 +1,4 @@
-"""运行所有 mcp_server 测试."""
+﻿"""运行所有 mcp_server 测试."""
 
 import sys
 from pathlib import Path

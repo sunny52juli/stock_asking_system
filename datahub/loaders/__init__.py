@@ -11,6 +11,8 @@ from datahub.loaders.stock_loader import (
     load_latest_market_data,
     load_raw_market_data,
 )
+from datahub.loaders.ths_hot_loader import get_ths_hot_stocks
+from datahub.loaders.ths_concept_loader import get_ths_concepts, aggregate_ths_concepts_by_stock
 
 __all__ = [
     "StockDataLoader",
@@ -19,4 +21,7 @@ __all__ = [
     "load_latest_market_data",
     "load_raw_market_data",
     "get_available_industries",
+    "get_ths_hot_stocks",
+    "get_ths_concepts",
+    "aggregate_ths_concepts_by_stock",
 ]

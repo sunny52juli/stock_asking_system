@@ -1,4 +1,4 @@
-"""表达式安全层测试 - 验证三层防护机制."""
+﻿"""表达式安全层测试 - 验证三层防护机制."""
 
 import pytest
 import pandas as pd

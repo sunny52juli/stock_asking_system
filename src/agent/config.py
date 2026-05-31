@@ -1,4 +1,4 @@
-"""Agent 配置 - 复用 infrastructure 配置模型.
+﻿"""Agent 配置 - 复用 infrastructure 配置模型.
 
 从 infrastructure.config.settings 导入共享配置，
 仅定义 Agent 特有的配置项。

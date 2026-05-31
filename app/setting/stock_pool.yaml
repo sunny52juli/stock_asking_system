@@ -11,9 +11,13 @@ stock_pool:
   min_list_days: 180           # 最小上市天数
   exclude_st: true             # 排除ST股票
   exclude_suspended: true      # 排除停牌股票
-  industry:                    # 行业过滤列表（支持模糊匹配），null表示全市场
-    - '通信设备'
+  ths_concept:        # 同花顺概念过滤列表（支持模糊匹配），null表示全市场
+    - '通信设备'               # 可以是概念名称，只要匹配到其中之一即可
     - '芯片半导体'
+    - '光通信'
+  
+  # 热门股过滤（同花顺热门股）
+  ths_hot:                  # 获取前N只热门股，0或null表示不起效
   
   # 数据质量参数
   min_completeness_ratio: 0.8  # 最小数据完整度 (0.0-1.0)

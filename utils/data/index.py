@@ -1,7 +1,11 @@
 """指数工具辅助函数 - 统一的收益率预处理和合并逻辑."""
+import logging
+
 import polars as pl
 
-from datahub.domain.index_selector import get_index_code
+from datahub.loaders.index_selector import IndexSelector
+
+logger = logging.getLogger(__name__)
 
 
 def prepare_index_returns(index_data: pl.DataFrame) -> dict[str, pl.DataFrame]:
@@ -29,6 +33,13 @@ def prepare_index_returns(index_data: pl.DataFrame) -> dict[str, pl.DataFrame]:
         idx_data = index_data.filter(pl.col('index_code') == idx_code).sort('trade_date')
         if len(idx_data) < 2:
             continue
+        
+        # 去重：确保 trade_date 唯一，保留第一条记录
+        before_count = len(idx_data)
+        idx_data = idx_data.unique(subset=['trade_date'], keep='first')
+        after_count = len(idx_data)
+        if before_count != after_count:
+            logger.warning(f"   [WARN] 指数 {idx_code} 存在 {before_count - after_count} 条重复日期记录，已去除")
         
         idx_returns = idx_data.with_columns(
             (pl.col('close') / pl.col('close').shift(1) - 1).alias('return')
@@ -60,7 +71,7 @@ def merge_stock_with_index_returns(
     
     # 为每只股票映射对应的指数代码
     stock_with_index = stock_data.with_columns(
-        pl.col('ts_code').map_elements(get_index_code, return_dtype=pl.Utf8).alias('index_code')
+        pl.col('ts_code').map_elements(IndexSelector.get_index_code, return_dtype=pl.Utf8).alias('index_code')
     )
     
     # 构建指数收益率查找表
@@ -72,6 +83,14 @@ def merge_stock_with_index_returns(
             )
         )
     index_returns_table = pl.concat(index_returns_list)
+    
+    # 去重：确保 (index_code, trade_date) 唯一
+    if 'index_code' in index_returns_table.columns and 'trade_date' in index_returns_table.columns:
+        before_count = len(index_returns_table)
+        index_returns_table = index_returns_table.unique(subset=['index_code', 'trade_date'], keep='first')
+        after_count = len(index_returns_table)
+        if before_count != after_count:
+            logger.info(f"   [OK] 指数收益率表去除 {before_count - after_count} 条重复记录")
     
     # 合并股票和指数收益率
     merged = stock_with_index.join(

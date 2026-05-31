@@ -1,4 +1,4 @@
-"""表达式安全验证器 - 集成到Bridge工具中."""
+﻿"""表达式安全验证器 - 集成到Bridge工具中."""
 
 from __future__ import annotations
 

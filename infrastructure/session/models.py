@@ -1,4 +1,4 @@
-"""会话数据模型."""
+﻿"""会话数据模型."""
 
 from __future__ import annotations
 

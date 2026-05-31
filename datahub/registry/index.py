@@ -1,4 +1,4 @@
-"""Index dataset registrations."""
+﻿"""Index dataset registrations."""
 
 from datahub.core.dataset import Dataset, DatasetMeta, DatasetRegistry, FetchStep
 
@@ -7,18 +7,18 @@ DatasetRegistry.register(
     DatasetMeta(
         dataset=Dataset.INDEX_DAILY,
         domain="index",
-        partition_by="date",
+        partition_by="datetime",
         key_columns=["ts_code", "trade_date"],
         storage_path="index/daily",
         date_column="trade_date",
         code_column="ts_code",
-        partition_key_template="{date}_{index_code}",  # 按日期+指数代码分区
+        partition_key_template="{datetime}_{index_code}",  # 按日期+指数代码分区
         description="指数日线行情（开高低收量额）",
     ),
     pipeline=[
         FetchStep(
             api_name="index_daily",
-            param_mapping={"trade_date": "date", "ts_code": "index_code"},
+            param_mapping={"trade_date": "datetime", "ts_code": "index_code"},
             fields=[
                 "ts_code",
                 "trade_date",
@@ -42,18 +42,18 @@ DatasetRegistry.register(
     DatasetMeta(
         dataset=Dataset.INDEX_VALUATION,
         domain="index",
-        partition_by="date",
+        partition_by="datetime",
         key_columns=["ts_code", "trade_date"],
         storage_path="index/valuation",
         date_column="trade_date",
         code_column="ts_code",
-        partition_key_template="{date}",
+        partition_key_template="{datetime}",
         description="指数估值（PE/PB/PS/股息率/换手率）",
     ),
     pipeline=[
         FetchStep(
             api_name="index_dailybasic",
-            param_mapping={"trade_date": "date", "ts_code": "index_code"},
+            param_mapping={"trade_date": "datetime", "ts_code": "index_code"},
             fields=[
                 "ts_code",
                 "trade_date",

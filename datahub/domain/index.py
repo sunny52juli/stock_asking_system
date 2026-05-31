@@ -28,20 +28,20 @@ class Index:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> "pd.DataFrame":
-        return load_with_date_or_range(
-            self._repo,
-            Dataset.STOCK_INDEX_WEIGHT,
-            date=date,
-            start_date=start_date,
-            end_date=end_date,
-            index_code=index_code,
-        )
+        """获取指数成分股列表。
+        
+        注意：此功能已简化，如需获取指数成分股，建议直接使用 Tushare API。
+        """
+        logger.warning("[WARN] Index.members() 已弃用，建议使用其他方式获取指数成分股")
+        return pl.DataFrame()
 
     def available_dates(self, index_code: str | None = None) -> list[str]:
-        return self._repo.available_dates(Dataset.STOCK_INDEX_WEIGHT)
+        """获取可用日期列表（已简化，返回空列表）。"""
+        return []
 
     def latest_date(self, index_code: str | None = None) -> str | None:
-        return self._repo.latest_date(Dataset.STOCK_INDEX_WEIGHT)
+        """获取最新日期（已简化，返回None）。"""
+        return None
 
     def level(
         self,
@@ -71,7 +71,27 @@ class Index:
         if index_code:
             query_params["index_code"] = index_code
         
-        return self._repo.load(Query(**query_params))
+        result = self._repo.load(Query(**query_params))
+        
+        # 去重：确保 (index_code 或 ts_code, trade_date) 唯一
+        if not result.is_empty() and 'trade_date' in result.columns:
+            # 确定用于分组的列
+            group_col = 'index_code' if 'index_code' in result.columns else ('ts_code' if 'ts_code' in result.columns else None)
+            if group_col:
+                before_count = len(result)
+                result = result.unique(subset=[group_col, 'trade_date'], keep='first')
+                after_count = len(result)
+                if before_count != after_count:
+                    logger.debug(f"   [OK] level 函数去除 {before_count - after_count} 条重复记录")
+            else:
+                # 如果没有 index_code 或 ts_code，只按 trade_date 去重
+                before_count = len(result)
+                result = result.unique(subset=['trade_date'], keep='first')
+                after_count = len(result)
+                if before_count != after_count:
+                    logger.debug(f"   [OK] level 函数去除 {before_count - after_count} 条重复记录")
+        
+        return result
 
     def batch_level(
         self,
@@ -150,6 +170,15 @@ class Index:
         
         # 合并所有指数的数据
         combined = pl.concat(dfs)
+        
+        # 去重：确保 (index_code, trade_date) 唯一，保留第一条记录
+        if 'index_code' in combined.columns and 'trade_date' in combined.columns:
+            before_count = len(combined)
+            combined = combined.unique(subset=['index_code', 'trade_date'], keep='first')
+            after_count = len(combined)
+            if before_count != after_count:
+                logger.info(f"   [OK] 去除重复数据: {before_count - after_count} 条重复记录")
+        
         logger.info(f"[OK] 批量加载完成: {len(index_codes) - len(failed_indices)}/{len(index_codes)} 个指数, 共 {len(combined)} 条记录")
         
         if failed_indices:
@@ -168,7 +197,15 @@ class Index:
         df_pl = self.level(index_code=index_code, start_date=start_date, end_date=end_date, freq=freq)
         if df_pl.is_empty() or "close" not in df_pl.columns:
             return df_pl
+        
+        # 去重：确保 trade_date 唯一
         date_col = next((c for c in ["trade_date"] if c in df_pl.columns), df_pl.columns[0])
+        before_count = len(df_pl)
+        df_pl = df_pl.unique(subset=[date_col], keep='first')
+        after_count = len(df_pl)
+        if before_count != after_count:
+            logger.info(f"   [OK] returns 函数去除 {before_count - after_count} 条重复记录")
+        
         df_pl = df_pl.sort(date_col)
         df_pl = df_pl.with_columns(
             (pl.col("close") / pl.col("close").shift(1) - 1).alias("return")
@@ -203,15 +240,12 @@ class Index:
         end_date: str | None = None,
         codes: list[str] | None = None,
     ) -> "pd.DataFrame":
-        return load_with_date_or_range(
-            self._repo,
-            Dataset.STOCK_INDEX_WEIGHT,
-            date=date,
-            start_date=start_date,
-            end_date=end_date,
-            index_code=index_code,
-            codes=codes,
-        )
+        """获取指数成分股权重（已简化）。
+        
+        注意：此功能已弃用，如需权重数据，建议直接使用 Tushare API。
+        """
+        logger.warning("[WARN] Index.weights() 已弃用")
+        return pl.DataFrame()
 
     def rebalance_history(
         self,
@@ -219,31 +253,12 @@ class Index:
         start_date: str,
         end_date: str,
     ) -> "pl.DataFrame":
-        df = self.weights(index_code=index_code, start_date=start_date, end_date=end_date)
-        if df.is_empty():
-            return pl.DataFrame()
-        date_col = next((c for c in ["trade_date", "end_date"] if c in df.columns), None)
-        code_col = next((c for c in ["con_code", "ts_code"] if c in df.columns), None)
-        if date_col is None or code_col is None:
-            return pl.DataFrame()
-        dates = sorted(df[date_col].unique().to_list())
-        rebalances = []
-        for i in range(1, len(dates)):
-            prev_codes = set(df.filter(pl.col(date_col) == dates[i-1])[code_col].to_list())
-            curr_codes = set(df.filter(pl.col(date_col) == dates[i])[code_col].to_list())
-            added = curr_codes - prev_codes
-            removed = prev_codes - curr_codes
-            if added or removed:
-                rebalances.append(
-                    {
-                        "date": dates[i],
-                        "added": list(added),
-                        "removed": list(removed),
-                        "added_count": len(added),
-                        "removed_count": len(removed),
-                    }
-                )
-        return pl.DataFrame(rebalances)
+        """获取指数调仓历史（已简化）。
+        
+        注意：此功能已弃用。
+        """
+        logger.warning("[WARN] Index.rebalance_history() 已弃用")
+        return pl.DataFrame()
 
     def sector_breakdown(
         self,
@@ -251,43 +266,12 @@ class Index:
         date: str,
         level: int = 1,
     ) -> "pl.DataFrame":
-        weights_pl = self.weights(index_code=index_code, date=date)
-        if weights_pl.is_empty():
-            return pl.DataFrame()
-        code_col = next((c for c in ["con_code", "ts_code"] if c in weights_pl.columns), None)
-        weight_col = next((c for c in ["weight"] if c in weights_pl.columns), None)
-        if code_col is None:
-            return weights_pl
-        try:
-            basic_q = Query(
-                dataset=Dataset.STOCK_BASIC,
-                start_date="19900101",
-                end_date="20991231",
-                codes=weights_pl[code_col].to_list(),
-            )
-            basic_pl = self._repo.load(basic_q)
-            industry_col = "industry"
-            if industry_col in basic_pl.columns and "ts_code" in basic_pl.columns:
-                merged = weights_pl.join(
-                    basic_pl.select(["ts_code", industry_col]),
-                    left_on=code_col,
-                    right_on="ts_code",
-                    how="left",
-                    suffix="_dup"
-                )
-                # 移除带 _dup 后缀的列
-                dup_cols = [col for col in merged.columns if col.endswith("_dup")]
-                if dup_cols:
-                    merged = merged.drop(dup_cols)
-                if weight_col:
-                    return (
-                        merged.group_by(industry_col)
-                        .agg(pl.col(weight_col).sum())
-                        .sort(weight_col, descending=True)
-                    )
-        except Exception:
-            return weights_pl
-        return weights_pl
+        """获取指数行业分布（已简化）。
+        
+        注意：此功能已弃用。
+        """
+        logger.warning("[WARN] Index.sector_breakdown() 已弃用")
+        return pl.DataFrame()
 
     def catalog(self, family: str | None = None) -> "pl.DataFrame":
         query = Query(
@@ -299,3 +283,5 @@ class Index:
         if family and "market" in df_pl.columns:
             df_pl = df_pl.filter(pl.col("market").str.contains(family))
         return df_pl.with_row_index().drop("index")
+
+

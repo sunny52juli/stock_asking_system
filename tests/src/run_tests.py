@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """运行 Core 模块所有测试.
 
 使用方法:

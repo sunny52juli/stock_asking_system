@@ -1,4 +1,4 @@
-"""测试 ToolStep 窗口参数验证."""
+﻿"""测试 ToolStep 窗口参数验证."""
 
 import pytest
 from src.agent.models.screening_logic import ToolStep

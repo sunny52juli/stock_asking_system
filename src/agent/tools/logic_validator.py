@@ -1,4 +1,4 @@
-"""筛选逻辑校验器 - 验证 screening_logic 结构."""
+﻿"""筛选逻辑校验器 - 验证 screening_logic 结构."""
 
 from __future__ import annotations
 

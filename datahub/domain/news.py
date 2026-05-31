@@ -1,4 +1,4 @@
-"""News domain. Implements NewsProtocol."""
+﻿"""News domain. Implements NewsProtocol."""
 
 from __future__ import annotations
 

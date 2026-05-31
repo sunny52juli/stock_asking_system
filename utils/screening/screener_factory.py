@@ -1,4 +1,4 @@
-"""统一筛选器接口 - 屏蔽底层实现差异.
+﻿"""统一筛选器接口 - 屏蔽底层实现差异.
 
 from src.screening.executor import ScreeningExecutor
 from utils.screening.stock_screener import StockScreener

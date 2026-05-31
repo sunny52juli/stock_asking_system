@@ -1,4 +1,4 @@
-"""安全模块 - AST验证和导入白名单."""
+﻿"""安全模块 - AST验证和导入白名单."""
 
 from src.agent.security.ast_validator import (
     ASTValidationError,

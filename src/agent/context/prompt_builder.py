@@ -1,4 +1,4 @@
-"""System Prompt构建器 - 整合工具描述和技能知识."""
+﻿"""System Prompt构建器 - 整合工具描述和技能知识."""
 
 from __future__ import annotations
 

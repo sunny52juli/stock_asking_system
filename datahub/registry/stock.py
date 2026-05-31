@@ -1,4 +1,4 @@
-"""股票数据集注册 - 从YAML配置加载."""
+﻿"""股票数据集注册 - 从YAML配置加载."""
 
 from pathlib import Path
 

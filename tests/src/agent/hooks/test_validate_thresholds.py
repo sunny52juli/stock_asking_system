@@ -1,4 +1,4 @@
-"""测试 validate-thresholds Hook 的动态解析功能."""
+﻿"""测试 validate-thresholds Hook 的动态解析功能."""
 
 import json
 import subprocess

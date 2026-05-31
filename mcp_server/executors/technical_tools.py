@@ -1,4 +1,4 @@
-"""Technical 工具执行器 - 技术指标类工具."""
+﻿"""Technical 工具执行器 - 技术指标类工具."""
 
 from __future__ import annotations
 import polars as pl

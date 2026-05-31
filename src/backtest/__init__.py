@@ -1,4 +1,4 @@
-"""回测引擎模块."""
+﻿"""回测引擎模块."""
 
 from src.backtest.engine import BacktestEngine, run_backtest
 from src.backtest.returns import ReturnsCalculator

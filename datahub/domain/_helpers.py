@@ -1,4 +1,4 @@
-"""Common helpers for domain classes to reduce duplication."""
+﻿"""Common helpers for domain classes to reduce duplication."""
 
 from __future__ import annotations
 
@@ -18,16 +18,16 @@ def load_with_date_or_range(
     fields: list[str] | None = None,
     index_code: str | None = None,
 ) -> "pl.DataFrame":
-    """Load data supporting both single date and date range.
+    """Load data supporting both single datetime and datetime range.
     
     This eliminates the repetitive if/else pattern in every domain method.
     
     Args:
         repo: Repository instance
         dataset: Target dataset
-        date: Single date (YYYYMMDD)
-        start_date: Start of date range
-        end_date: End of date range
+        date: Single datetime (YYYYMMDD)
+        start_date: Start of datetime range
+        end_date: End of datetime range
         codes: Optional stock/fund codes filter
         fields: Optional fields to select
         index_code: Optional index code
@@ -36,7 +36,7 @@ def load_with_date_or_range(
         Polars DataFrame with requested data
         
     Raises:
-        ValueError: If neither date nor (start_date, end_date) is provided
+        ValueError: If neither datetime nor (start_date, end_date) is provided
     """
     if date is not None:
         return repo.load(
@@ -61,4 +61,4 @@ def load_with_date_or_range(
             )
         )
     
-    raise ValueError("Provide either date or (start_date, end_date)")
+    raise ValueError("Provide either datetime or (start_date, end_date)")

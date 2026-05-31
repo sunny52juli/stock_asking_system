@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 import numpy as np
 
-from datahub.calendar_utils import calculate_date_offset
+from utils.date import calculate_date_offset
 def get_holding_period_end_date(screening_date: str, holding_days: int) -> str:
     """获取持有期结束日期
     

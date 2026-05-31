@@ -1,4 +1,4 @@
-"""同步仓库 - 负责数据同步和缓存管理."""
+﻿"""同步仓库 - 负责数据同步和缓存管理."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ class SyncRepository:
         if not query.is_range:
             return self._load_single(query, meta, pipeline)
         
-        if meta.partition_by == "date":
+        if meta.partition_by == "datetime":
             return self.range_loader.load_date_range(query, meta, pipeline)
         
         return self._fetch_range_direct(query, meta, pipeline)

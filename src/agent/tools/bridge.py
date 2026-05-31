@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from .screening_executor import create_run_screening
+from .screening_executor import create_run_screening, get_last_screening_result
 from .script_saver import create_save_screening_script
 
 

@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 @unique
 class Dataset(Enum):
     STOCK_DAILY = "stock_daily"
-    STOCK_INDEX_WEIGHT = "stock_index_weight"
     STOCK_BASIC = "stock_basic"
+    THS_CONCEPT = "ths_concept"  # 同花顺概念成分股
     FUND_NAV = "fund_nav"
     STOCK_VALUATION = "stock_valuation"
     STOCK_HOLDER = "stock_holder"
@@ -39,12 +39,12 @@ class Dataset(Enum):
 class DatasetMeta:
     dataset: Dataset
     domain: str
-    partition_by: str  # "date" | "composite" | "none"
+    partition_by: str  # "datetime" | "composite" | "none"
     key_columns: list[str]
     storage_path: str
     date_column: str
     code_column: str
-    partition_key_template: str  # e.g. "{date}" or "{index_code}_{date}"
+    partition_key_template: str  # e.g. "{datetime}" or "{index_code}_{datetime}"
     description: str = ""
 
 

@@ -1,60 +1,110 @@
-"""Utils 模块 - 统一导出接口."""
+﻿"""Utils 模块 - 统一导出接口."""
 
-# File system utilities
-from utils.fs import ensure_dir, sanitize_filename
+# Date utilities
+from utils.date import (
+    ensure_dir,
+    sanitize_filename,
+    format_date,
+    parse_date,
+    get_today_str,
+    DATE_FMT_YMD,
+    DATE_FMT_ISO,
+    DATE_FMT_FULL,
+    DATE_FMT_TIMESTAMP,
+    # Trade calendar
+    count_trade_days,
+    calculate_date_offset,
+    get_data_start_date,
+    DateAdjuster,
+)
 
-# Datetime utilities
-from utils.datetime_utils import format_date, parse_date
-
-# Polars tools (performance optimization)
+# Data processing utilities
 try:
-    from utils.polars_tools import (
+    from utils.data import (
         pivot_wide,
         rolling_mean,
         rolling_std,
         pct_change,
         ts_rank,
         decay_linear,
+        prepare_index_returns,
+        merge_stock_with_index_returns,
     )
     POLARS_AVAILABLE = True
 except ImportError:
     POLARS_AVAILABLE = False
 
-# Logging
-from infrastructure.logging.logger import get_logger
+# Cache utilities
+from utils.cache import LRUCache, DiskCache, MultiLevelCache
 
-# Errors  
-from infrastructure.errors.exceptions import ScreeningError, DataLoadError, ConfigError
+# Logging helpers
+from utils.logging import (
+    log_success,
+    log_warning,
+    log_error,
+    log_info,
+    log_debug,
+    log_section,
+    log_step,
+    LOG_PREFIX_SUCCESS,
+    LOG_PREFIX_WARNING,
+    LOG_PREFIX_ERROR,
+    LOG_PREFIX_INFO,
+    LOG_PREFIX_DEBUG,
+)
 
-# Paths
-from infrastructure.paths.path_manager import PathManager, ensure_project_path, get_path_manager, get_project_root
-
-# Config
-from infrastructure.config.settings import get_settings, Settings
-
-# Data
-from datahub.data_fields import DataFields
-
-# Note: Agent imports removed to avoid circular dependency with datahub
-# If you need PermissionChecker, import directly: from utils.agent.permissions import PermissionChecker
+# Error formatter
+from utils.errors import (
+    format_error_message,
+    format_validation_error,
+    format_tool_error,
+)
 
 __all__ = [
-    # File system
-    "sanitize_filename",
+    # Date
     "ensure_dir",
-    # Datetime
+    "sanitize_filename",
     "format_date",
     "parse_date",
-    # Polars tools
+    "get_today_str",
+    "DATE_FMT_YMD",
+    "DATE_FMT_ISO",
+    "DATE_FMT_FULL",
+    "DATE_FMT_TIMESTAMP",
+    # Trade calendar
+    "count_trade_days",
+    "calculate_date_offset",
+    "get_data_start_date",
+    "DateAdjuster",
+    # Data processing
     "pivot_wide",
     "rolling_mean",
     "rolling_std",
     "pct_change",
     "ts_rank",
     "decay_linear",
+    "prepare_index_returns",
+    "merge_stock_with_index_returns",
     "POLARS_AVAILABLE",
-    # Infrastructure
-    "get_logger", "ScreeningError", "DataLoadError", "ConfigError",
-    "PathManager", "ensure_project_path", "get_path_manager", "get_project_root",
-    "get_settings", "Settings", "DataFields",
+    # Cache
+    "LRUCache",
+    "DiskCache",
+    "MultiLevelCache",
+    # Logging
+    "log_success",
+    "log_warning",
+    "log_error",
+    "log_info",
+    "log_debug",
+    "log_section",
+    "log_step",
+    "LOG_PREFIX_SUCCESS",
+    "LOG_PREFIX_WARNING",
+    "LOG_PREFIX_ERROR",
+    "LOG_PREFIX_INFO",
+    "LOG_PREFIX_DEBUG",
+    # Errors
+    "format_error_message",
+    "format_validation_error",
+    "format_tool_error",
 ]

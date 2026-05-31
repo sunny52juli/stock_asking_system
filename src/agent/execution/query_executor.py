@@ -1,4 +1,4 @@
-"""查询执行器 - 负责执行用户查询."""
+﻿"""查询执行器 - 负责执行用户查询."""
 
 from __future__ import annotations
 

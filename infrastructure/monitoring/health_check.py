@@ -1,4 +1,4 @@
-"""系统健康检查 - 自动监控和告警.
+﻿"""系统健康检查 - 自动监控和告警.
 
 from infrastructure.cache import get_data_cache
 import os

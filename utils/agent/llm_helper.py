@@ -1,4 +1,4 @@
-"""LLM 构建工具 - 从配置创建 LangChain ChatModel."""
+﻿"""LLM 构建工具 - 从配置创建 LangChain ChatModel."""
 
 from __future__ import annotations
 

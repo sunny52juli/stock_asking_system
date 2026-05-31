@@ -1,4 +1,4 @@
-"""组件初始化器 - 负责初始化所有Agent组件."""
+﻿"""组件初始化器 - 负责初始化所有Agent组件."""
 
 from __future__ import annotations
 

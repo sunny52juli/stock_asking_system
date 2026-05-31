@@ -1,4 +1,4 @@
-"""测试 MCP Server 核心模块 - server, auto_register, registered_tools."""
+﻿"""测试 MCP Server 核心模块 - server, auto_register, registered_tools."""
 
 import pytest
 from unittest.mock import Mock, patch
